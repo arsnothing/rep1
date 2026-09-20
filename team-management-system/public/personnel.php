@@ -223,7 +223,7 @@ require __DIR__ . '/../app/partials/header.php'; ?>
     <div class="smart-filter-menu"><div class="smart-filter-options" role="listbox"></div></div>
     <select name="filter" class="smart-filter-native" id="personnelCategorySelect" aria-label="وضعیت عناصر"><option value="" hidden <?= $filter===''?'selected':'' ?>>وضعیت عناصر</option><option value="all" <?= $filter==='all'?'selected':'' ?>>کلیه عناصر</option><option value="active" <?= $filter==='active'?'selected':'' ?>>عناصر فعال</option><option value="dismissed" <?= $filter==='dismissed'?'selected':'' ?>>عناصر راکد</option></select>
   </div>
-  <input type="search" name="q" class="filter-control filter-search" placeholder="جستجو نام، کد ملی، موبایل، تحصیلات، گواهینامه، زبان، سلامت یا دین" value="<?= e($_GET['q']??'') ?>" aria-label="جستجو">
+  <input type="search" name="q" class="filter-control filter-search" placeholder="نام، نام‌خانوادگی، کد ملی، شماره تلفن" value="<?= e($_GET['q']??'') ?>" aria-label="جستجو">
   <button class="filter-btn" type="submit">جستجو</button>
 </form>
 <?php $printTitle='فهرست عناصر'; $printLandscape=true; require __DIR__.'/../app/partials/print_frame.php'; ?>
