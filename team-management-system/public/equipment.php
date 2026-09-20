@@ -83,9 +83,9 @@ require __DIR__.'/../app/partials/header.php'; ?>
 <div class="panel equipment-panel">
   <div class="section-title">ثبت آماد جدید</div>
   <div class="form-grid">
-    <label class="wide equipment-type-field">عنوان
+    <label class="wide equipment-type-field">نوع آماد
       <select id="stockTypeSelect" data-placeholder="عنوان">
-        <option value="" disabled selected hidden>عنوان</option>
+        <option value="" disabled selected hidden>انتخاب نوع آماد</option>
         <?php foreach($equipmentTypes as $k=>$v):?><option value="<?=e($k)?>"><?=e($v)?></option><?php endforeach;?>
       </select>
     </label>
