@@ -170,7 +170,7 @@ function personnel_extra_columns(): array {
     if ($cols !== null) return $cols;
     $wanted = ['alias_name','religion','denomination','health_status','health_note','license_types','license_level',
                'landline_phone','referrer_first_name','referrer_last_name','referrer_national_id','referrer_mobile','languages',
-               'criminal_record_issue_date','sport_skill','postal_code'];
+               'criminal_record_issue_date','sport_skill','postal_code','job_title'];
     $cols = [];
     try {
         foreach ($pdo->query('SHOW COLUMNS FROM personnel') as $c) {

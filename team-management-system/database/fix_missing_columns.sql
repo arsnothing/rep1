@@ -107,13 +107,15 @@ ALTER TABLE `training_records`
   ADD COLUMN IF NOT EXISTS `description` TEXT DEFAULT NULL AFTER `training_date`;
 
 -- ---------------------------------------------------------------------
--- فیلدهای جدید فرم افزودن عنصر (مهارت ورزشی و کد پستی محل سکونت)
+-- فیلدهای جدید فرم افزودن عنصر (مهارت ورزشی، کد پستی محل سکونت، عنوان شغلی)
 -- به دیتابیس اصلی و تاریخچه افزوده می‌شوند تا در فیلترهای آتی قابل استفاده باشند.
 -- ---------------------------------------------------------------------
 ALTER TABLE `personnel`
   ADD COLUMN IF NOT EXISTS `sport_skill` VARCHAR(150) DEFAULT NULL AFTER `languages`,
-  ADD COLUMN IF NOT EXISTS `postal_code` VARCHAR(10) DEFAULT NULL AFTER `residence_address`;
+  ADD COLUMN IF NOT EXISTS `postal_code` VARCHAR(10) DEFAULT NULL AFTER `residence_address`,
+  ADD COLUMN IF NOT EXISTS `job_title` VARCHAR(150) DEFAULT NULL AFTER `postal_code`;
 
 ALTER TABLE `personnel_history`
   ADD COLUMN IF NOT EXISTS `sport_skill` VARCHAR(150) DEFAULT NULL AFTER `languages`,
-  ADD COLUMN IF NOT EXISTS `postal_code` VARCHAR(10) DEFAULT NULL AFTER `residence_address`;
+  ADD COLUMN IF NOT EXISTS `postal_code` VARCHAR(10) DEFAULT NULL AFTER `residence_address`,
+  ADD COLUMN IF NOT EXISTS `job_title` VARCHAR(150) DEFAULT NULL AFTER `postal_code`;

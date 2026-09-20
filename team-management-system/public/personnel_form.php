@@ -63,9 +63,8 @@ $values=$row ?: [
  'first_name'=>'','last_name'=>'','national_id'=>'','father_name'=>'','birth_date'=>'','marital_status'=>'','education_status'=>'','mobile'=>'','emergency_phone'=>'','residence_address'=>'','postal_code'=>'',
  'organizational_code'=>'','secondary_job'=>'','secondary_job_address'=>'','iban'=>'','profile_photo_path'=>'',
  'unit'=>'','unit_number'=>'1','group_no'=>'','team_no'=>'','position_type'=>'','personnel_status'=>'active','province_id'=>'','city_id'=>'','district_id'=>'','commander_number'=>'',
- 'alias_name'=>'','religion'=>'','denomination'=>'','health_status'=>'','health_note'=>'','license_types'=>'','license_level'=>'','landline_phone'=>'','sport_skill'=>'',
+ 'alias_name'=>'','religion'=>'','denomination'=>'','health_status'=>'','health_note'=>'','license_types'=>'','license_level'=>'','landline_phone'=>'','sport_skill'=>'','job_title'=>'',
  'referrer_first_name'=>'','referrer_last_name'=>'','referrer_national_id'=>'','referrer_mobile'=>'','languages'=>'',
- 'criminal_record_issue_date'=>'',
 ];
 $error='';
 /** در صورت خطا: تراکنش برگردانده و فایل‌های منتقل‌شده پاک می‌شوند تا رکورد یا فایل نیمه‌کاره نماند. */
@@ -95,6 +94,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $values['referrer_mobile']=digits_only($_POST['referrer_mobile']??'');
     $values['postal_code']=digits_only($_POST['postal_code']??'');
     $values['sport_skill']=trim((string)($_POST['sport_skill']??''));
+    $values['job_title']=trim((string)($_POST['job_title']??''));
     $healthStatus=(string)($_POST['health_status']??'');
     if(!isset(health_status_options()[$healthStatus])) $healthStatus='';
     $values['health_status']=$healthStatus;
@@ -115,7 +115,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
       'postal_code'=>'کد پستی محل سکونت',
       'referrer_first_name'=>'نام معرف','referrer_last_name'=>'نام خانوادگی معرف',
       'referrer_national_id'=>'کد ملی معرف','referrer_mobile'=>'شماره تماس همراه معرف',
-      'secondary_job_address'=>'آدرس محل کار',
+      'secondary_job_address'=>'آدرس محل کار','job_title'=>'عنوان شغلی',
       'organizational_code'=>'کد سازمانی','commander_number'=>'شماره قائد',
       'position_type'=>'سمت','unit'=>'رسته','unit_number'=>'شماره دسته',
     ];
@@ -140,7 +140,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!$error && $values['license_types']!=='' && $values['license_level']==='') $error='سطح تسلط گواهینامه را انتخاب کنید.';
     if(!$error && $values['license_types']==='' && $values['license_level']!=='') $error='نوع گواهینامه را انتخاب کنید.';
     if(!$error && $values['organizational_code']!=='' && !valid_digits($values['organizational_code'],1,30)) $error='کد سازمانی نامعتبر است.';
-    if(!$error && trim((string)$values['secondary_job'])!=='' && !valid_name_text($values['secondary_job'])) $error='عنوان شغل نباید شامل عدد باشد.';
+    if(!$error && trim((string)$values['secondary_job'])!=='' && !valid_name_text($values['secondary_job'])) $error='حرفه و تخصص نباید شامل عدد باشد.';
+    if(!$error && trim((string)($values['job_title']??''))!=='' && !valid_name_text($values['job_title'])) $error='عنوان شغلی نباید شامل عدد باشد.';
     if(!$error && trim((string)($values['sport_skill']??''))!=='' && digits_only($values['sport_skill'])===$values['sport_skill'] && $values['sport_skill']!=='') $error='مهارت ورزشی نباید فقط شامل عدد باشد.';
     if(!$error && $values['iban']!=='' && !valid_iban_local($values['iban'])) $error='شماره شبا باید شامل IR و ۲۴ رقم باشد.';
     if(!$error && !array_key_exists((string)$values['unit'],$categoryLabels)) $error='رسته نامعتبر است.';
@@ -152,15 +153,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
     $birthGregorian=parse_jalali_input($_POST['birth_date_jalali']??'');
     if(!$error && trim((string)($_POST['birth_date_jalali']??''))!=='' && $birthGregorian===null) $error='تاریخ تولد صحیح نیست.';
-
-    // تاریخ صدور گواهی سوء پیشینه (اختیاری) - اگر پر شده باشد باید معتبر باشد.
-    $criminalIssueGregorian = null;
-    $criminalIssueJalaliIn = trim((string)($_POST['criminal_record_issue_date'] ?? ''));
-    if ($criminalIssueJalaliIn !== '') {
-        $criminalIssueGregorian = parse_jalali_input($criminalIssueJalaliIn);
-        if ($criminalIssueGregorian === null) $error = 'تاریخ صدور گواهی سوء پیشینه صحیح نیست.';
-    }
-    $values['criminal_record_issue_date'] = $criminalIssueGregorian;
 
     $categoryTypeId=$category_number_id=$positionId=$groupId=$teamId=$cityProvinceId=null;
     if(!$error){
@@ -232,114 +224,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $movedFiles[]=$photoPath;
                 $pdo->prepare('UPDATE personnel SET profile_photo_path=? WHERE id=?')->execute([$stored,$personId]);
             }
-            /* ---- ثبت دوره‌های گذرانده ارسال‌شده از فرم (پس از اینکه personnel_id مشخص شد) ---- */
-            $courseKeyCounter = 0;
-            // دوره‌ها از طریق courses_json به فرم ارسال می‌شوند (آرایه‌ای از {name, date, description})
-            $submittedCourses = [];
-            if (!empty($_POST['courses_json'])) {
-                $decoded = json_decode((string)$_POST['courses_json'], true);
-                if (is_array($decoded)) {
-                    foreach ($decoded as $row) {
-                        if (!is_array($row)) continue;
-                        $submittedCourses[] = [
-                            'name' => (string)($row['name'] ?? ''),
-                            'date' => (string)($row['date'] ?? ''),
-                            'description' => (string)($row['description'] ?? ''),
-                        ];
-                    }
-                }
-            }
-            if ($submittedCourses) {
-                $hasDateCol = false;
-                try { $hasDateCol = (bool)$pdo->query("SHOW COLUMNS FROM training_records LIKE 'training_date'")->fetch(); } catch (Throwable $e) { $hasDateCol = false; }
-                $hasDescCol = false;
-                try { $hasDescCol = (bool)$pdo->query("SHOW COLUMNS FROM training_records LIKE 'description'")->fetch(); } catch (Throwable $e) { $hasDescCol = false; }
-
-                foreach ($submittedCourses as $idx => $course) {
-                    if (!is_array($course)) continue;
-                    $name = trim((string)($course['name'] ?? ''));
-                    if ($name === '') continue; // عنوان دوره اجباری است
-                    $dateJalali = trim((string)($course['date'] ?? ''));
-                    $trainingDate = null;
-                    if ($dateJalali !== '') {
-                        $trainingDate = parse_jalali_input($dateJalali);
-                        // تاریخ نامعتبر = نادیده گرفتن دوره (نه شکست کل فرم)
-                    }
-                    $description = trim((string)($course['description'] ?? ''));
-                    $courseKeyCounter++;
-                    $courseKey = 'custom_'.bin2hex(random_bytes(6));
-
-                    if ($hasDateCol && $hasDescCol) {
-                        $insCourse = $pdo->prepare('INSERT INTO training_records(personnel_id, course_key, course_name, status, training_date, description, created_by, updated_by) VALUES(?,?,?,?,?,?,?,?)');
-                        $insCourse->execute([$personId, $courseKey, $name, 'completed', $trainingDate, $description !== '' ? $description : null, user()['id'], user()['id']]);
-                    } elseif ($hasDateCol) {
-                        $insCourse = $pdo->prepare('INSERT INTO training_records(personnel_id, course_key, course_name, status, training_date, created_by, updated_by) VALUES(?,?,?,?,?,?,?)');
-                        $insCourse->execute([$personId, $courseKey, $name, 'completed', $trainingDate, user()['id'], user()['id']]);
-                    } else {
-                        $insCourse = $pdo->prepare('INSERT INTO training_records(personnel_id, course_key, course_name, status, created_by, updated_by) VALUES(?,?,?,?,?,?)');
-                        $insCourse->execute([$personId, $courseKey, $name, 'completed', user()['id'], user()['id']]);
-                    }
-                    $newCourseId = (int)$pdo->lastInsertId();
-
-                    // عکس دوره (در صورت ارسال) - فیلد course_photo_{idx}
-                    $photoField = 'course_photo_'.$idx;
-                    if (!empty($_FILES['courses_files']['name'][$idx]['photo']) && is_array($_FILES['courses_files']['name'][$idx])) {
-                        // ساختار پیچیده‌ای که در JS می‌سازیم: courses_files[idx][photo]
-                        $fName = $_FILES['courses_files']['name'][$idx]['photo'] ?? '';
-                        $fTmp = $_FILES['courses_files']['tmp_name'][$idx]['photo'] ?? '';
-                        $fErr = $_FILES['courses_files']['error'][$idx]['photo'] ?? UPLOAD_ERR_NO_FILE;
-                        $fSize = $_FILES['courses_files']['size'][$idx]['photo'] ?? 0;
-                        if ($fName !== '' && $fErr === UPLOAD_ERR_OK && (int)$fSize > 0 && (int)$fSize <= 8*1024*1024 && is_uploaded_file($fTmp)) {
-                            $mime = (new finfo(FILEINFO_MIME_TYPE))->file($fTmp);
-                            $allowedDoc = ['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','application/pdf'=>'pdf'];
-                            if (isset($allowedDoc[$mime])) {
-                                $stored = 'training_'.$personId.'_'.bin2hex(random_bytes(10)).'.'.$allowedDoc[$mime];
-                                $docPath = storage_path('documents').$stored;
-                                if (move_uploaded_file($fTmp, $docPath)) {
-                                    $movedFiles[] = $docPath;
-                                    $pdo->prepare('INSERT INTO training_documents(training_record_id, original_name, stored_name, mime_type, file_size, created_by) VALUES(?,?,?,?,?,?)')
-                                        ->execute([$newCourseId, $fName, $stored, $mime, (int)$fSize, user()['id']]);
-                                }
-                            }
-                        }
-                    } elseif (!empty($_FILES[$photoField]['name'])) {
-                        // ساختار ساده‌تر: course_photo_{idx}
-                        $file = $_FILES[$photoField];
-                        if ($file['error']===UPLOAD_ERR_OK && $file['size']<=8*1024*1024) {
-                            $mime=(new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
-                            $allowedDoc=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','application/pdf'=>'pdf'];
-                            if (isset($allowedDoc[$mime])) {
-                                $stored='training_'.$personId.'_'.bin2hex(random_bytes(10)).'.'.$allowedDoc[$mime];
-                                $docPath=storage_path('documents').$stored;
-                                if (move_uploaded_file($file['tmp_name'],$docPath)) {
-                                    $movedFiles[]=$docPath;
-                                    $pdo->prepare('INSERT INTO training_documents(training_record_id, original_name, stored_name, mime_type, file_size, created_by) VALUES(?,?,?,?,?,?)')
-                                        ->execute([$newCourseId, $file['name'], $stored, $mime, (int)$file['size'], user()['id']]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            /* ---- حذف دوره‌هایی که کاربر از فهرست «موجود» حذف کرده است ---- */
-            if ($edit && !empty($_POST['courses_removed'])) {
-                $removedIds = json_decode((string)$_POST['courses_removed'], true);
-                if (is_array($removedIds) && $removedIds) {
-                    $removedIds = array_values(array_filter(array_map('intval', $removedIds), fn($v) => $v > 0));
-                    if ($removedIds) {
-                        $placeholders = implode(',', array_fill(0, count($removedIds), '?'));
-                        // ابتدا فایل‌های سند دوره‌های حذف‌شده را از روی دیسک پاک کن
-                        $dq = $pdo->prepare("SELECT stored_name FROM training_documents td JOIN training_records tr ON tr.id=td.training_record_id WHERE tr.personnel_id=? AND tr.id IN ($placeholders)");
-                        $dq->execute(array_merge([$personId], $removedIds));
-                        foreach ($dq->fetchAll() as $dr) {
-                            $path = storage_path('documents') . $dr['stored_name'];
-                            if (is_file($path)) { @unlink($path); }
-                        }
-                        $pdo->prepare("DELETE FROM training_records WHERE personnel_id=? AND id IN ($placeholders)")
-                            ->execute(array_merge([$personId], $removedIds));
-                    }
-                }
-            }
             foreach(['birth_certificate'=>'document_birth_certificate','national_card'=>'document_national_card','criminal_record'=>'document_criminal_record','education_certificate'=>'document_education_certificate','driving_license'=>'document_driving_license','personal_form'=>'document_personal_form'] as $documentType=>$input){
                 if(empty($_FILES[$input]['name'])) continue; $file=$_FILES[$input]; if($file['error']!==UPLOAD_ERR_OK||$file['size']>8*1024*1024) throw new RuntimeException('حجم یکی از مدارک بیش از حد مجاز است.');
                 $mime=(new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);$allowed=['application/pdf'=>'pdf','image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];if(!isset($allowed[$mime]))throw new RuntimeException('فرمت یکی از مدارک مجاز نیست.');
@@ -368,31 +252,13 @@ $districtSelectable = count($districtsList) > 1;
 $birthJalali=jalali_to_input($values['birth_date']??'');
 $currentProvince=(int)($values['province_id']??0); if($currentProvince && !$cities){$st=$pdo->prepare("SELECT c.id,c.city_name FROM cities c INNER JOIN provinces p ON p.id=c.province_id WHERE c.province_id=? AND p.province_code='TEH' AND c.is_active=1 ORDER BY c.city_name");$st->execute([$currentProvince]);$cities=$st->fetchAll();}
 
-/* ---- دوره‌های گذرانده شده (برای حالت ویرایش از دیتابیس لود می‌شود) ---- */
-$existingCourses = [];
-if ($edit) {
-    try {
-        $cq = $pdo->prepare('SELECT id, course_name, training_date, description, certificate_serial, created_at FROM training_records WHERE personnel_id=? ORDER BY COALESCE(training_date, created_at) DESC, id DESC');
-        $cq->execute([$id]);
-        foreach ($cq->fetchAll() as $cr) {
-            $existingCourses[] = [
-                'id' => (int)$cr['id'],
-                'name' => (string)$cr['course_name'],
-                'date' => $cr['training_date'] ? jalali_to_input($cr['training_date']) : '',
-                'description' => (string)($cr['description'] ?? ''),
-                'cert' => (string)($cr['certificate_serial'] ?? ''),
-                'created_at' => $cr['created_at'],
-            ];
-        }
-    } catch (Throwable $e) { $existingCourses = []; }
-}
 require __DIR__.'/../app/partials/header.php'; ?>
 <section class="page-head"><div><h1><?=$edit?'ویرایش پرونده عنصر':'افزودن عنصر جدید'?></h1></div></section>
 <?php if($error):?><div class="alert danger"><?=e($error)?></div><?php endif;?>
 <form method="post" enctype="multipart/form-data" class="panel form-grid" id="personnelForm">
 <input type="hidden" name="csrf" value="<?=e(csrf_token())?>">
 
-<div class="section-title wide">اطلاعات فردی</div>
+<div class="section-title wide">اطلاعات فردی فیزیک</div>
 <?php
   $languageOptions=language_options();
   $currentLanguages=array_values(array_filter(explode(',', (string)($values['languages']??'')), fn($x)=>isset($languageOptions[$x])));
@@ -448,15 +314,11 @@ require __DIR__.'/../app/partials/header.php'; ?>
 <label><span class="lbl">شماره تماس همراه</span><input name="referrer_mobile" required inputmode="numeric" value="<?=e($values['referrer_mobile']??'')?>"></label>
 
 <div class="section-title wide">اطلاعات شغلی</div>
-<p class="zone-auto-note wide">«حرفه و تخصص» در بخش اطلاعات فردی قرار دارد. در اینجا فقط آدرس محل کار (اگر حرفه‌ای دوم دارد) را وارد کنید.</p>
+<label><span class="lbl">عنوان شغلی</span><input name="job_title" required value="<?=e($values['job_title']??'')?>"></label>
 <label class="wide"><span class="lbl">آدرس محل کار</span><textarea name="secondary_job_address" required rows="3"><?=e($values['secondary_job_address']??'')?></textarea></label>
 
 <div class="section-title wide">اطلاعات بانکی</div>
 <label><span class="lbl">شماره شبا</span><div class="iban-input"><span class="iban-prefix">IR</span><input name="iban_digits" required placeholder="حداکثر ۲۴ رقم وارد شود" maxlength="24" inputmode="numeric" value="<?=e(substr((string)($values['iban']??''),2,24))?>"><input type="hidden"  name="iban" value="<?=e($values['iban']??'')?>"></div></label>
-
-<div class="section-title wide">سابقه و گواهی‌ها</div>
-<?php $criminalIssueJalali = $values['criminal_record_issue_date'] ? jalali_to_input($values['criminal_record_issue_date']) : ''; ?>
-<label><span class="lbl">تاریخ صدور گواهی سوء پیشینه</span><input type="text" name="criminal_record_issue_date" class="jalali" maxlength="10" inputmode="numeric" autocomplete="off" placeholder="۱۴۰۳/۰۱/۰۱" value="<?=e($criminalIssueJalali)?>"></label>
 
 <div class="section-title wide">جایگاه سازمانی</div>
 <div class="organization-fields wide">
@@ -471,65 +333,6 @@ require __DIR__.'/../app/partials/header.php'; ?>
  <label><span class="lbl">تیم</span><select name="team_no" id="teamSelect" required></select></label>
 </div>
 
-<div class="section-title wide">دوره‌های گذرانده</div>
-<div class="wide training-section-block">
-  <div class="training-section-head">
-    <button type="button" class="btn primary" data-pv-open="courseModal" id="addCourseBtn">افزودن دوره</button>
-  </div>
-  <div id="coursesList" class="courses-list">
-    <?php if (!$edit): ?>
-      <div class="empty courses-empty">هنوز دوره‌ای اضافه نشده است.</div>
-    <?php endif; ?>
-    <?php foreach ($existingCourses as $i => $ec): ?>
-      <div class="course-row" data-existing-id="<?= (int)$ec['id'] ?>">
-        <div class="course-row-icon">✓</div>
-        <div class="course-row-main">
-          <strong><?= e($ec['name']) ?></strong>
-          <?php if ($ec['date'] !== ''): ?><small>تاریخ: <?= e($ec['date']) ?></small><?php endif; ?>
-          <?php if ($ec['description'] !== ''): ?><small>توضیح: <?= e(mb_strimwidth($ec['description'], 0, 80, '…')) ?></small><?php endif; ?>
-        </div>
-        <button type="button" class="course-row-remove" title="حذف" data-remove-existing="<?= (int)$ec['id'] ?>">×</button>
-      </div>
-    <?php endforeach; ?>
-  </div>
-  <input type="hidden" name="courses_json" id="coursesJson" value="">
-</div>
-
-<div class="pv-modal" id="courseModal" aria-hidden="true">
-  <div class="pv-modal-backdrop" data-pv-close></div>
-  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="courseModalTitle">
-    <header class="pv-modal-head">
-      <div><h2 id="courseModalTitle">افزودن دوره گذرانده</h2></div>
-      <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
-    </header>
-    <div class="pick-list">
-      <div class="pick-scroll">
-        <label class="pv-field pv-field-wide"><span class="lbl">عنوان دوره</span><input type="text" id="courseName" maxlength="150" autocomplete="off"></label>
-        <label class="pv-field pv-field-wide"><span class="lbl">تاریخ</span><input type="text" id="courseDate" class="jalali" maxlength="10" inputmode="numeric" autocomplete="off"></label>
-        <div class="pv-field pv-field-wide">
-          <span class="lbl">توضیحات</span>
-          <textarea id="courseDescription" rows="3" maxlength="2000" class="course-desc-textarea"></textarea>
-        </div>
-        <div class="pv-field pv-field-wide">
-          <span class="lbl">آپلود عکس</span>
-          <div class="course-photo-card pv-upload-card">
-            <div class="course-photo-icon">▣</div>
-            <div class="course-photo-info"><strong>عکس دوره</strong><small>یک فایل، حداکثر ۸MB — JPG/PNG/WEBP/PDF</small></div>
-            <label class="file-picker">
-              <span data-file-label="انتخاب فایل">انتخاب فایل</span>
-              <input type="file" id="coursePhotoFile" accept="image/jpeg,image/png,image/webp,application/pdf">
-            </label>
-          </div>
-        </div>
-        <div id="courseFormError" class="course-form-error" hidden></div>
-      </div>
-    </div>
-    <div class="pv-modal-actions course-modal-actions">
-      <button type="button" class="btn primary" id="courseApply">ثبت</button>
-      <button type="button" class="btn secondary" data-pv-close>انصراف</button>
-    </div>
-  </section>
-</div>
 
 <div class="section-title wide">حوزه استحفاظی</div>
 <p class="zone-auto-note wide">حوزه استحفاظی به‌صورت خودکار با توجه به اطلاعات دسته عنصر انتخاب می‌شود.</p>
@@ -608,30 +411,6 @@ require __DIR__.'/../app/partials/header.php'; ?>
 .location-field{gap:7px!important}
 .smart-select{position:relative;width:100%}
 
-/* ----- بخش دوره‌های گذرانده ----- */
-.training-section-block{display:flex;flex-direction:column;gap:12px}
-/* در حالت RTL، flex-start به معنای سمت راست است */
-.training-section-head{display:flex;justify-content:flex-start;align-items:center;gap:14px;flex-wrap:wrap}
-.courses-list{display:flex;flex-direction:column;gap:9px}
-.course-row{display:grid;grid-template-columns:36px 1fr 32px;align-items:center;gap:12px;padding:11px 13px;border:1px solid #dfe9e4;border-radius:13px;background:#f4f8f5}
-.course-row-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:#244b3b;color:#fff;font-weight:900}
-.course-row-main{display:flex;flex-direction:column;min-width:0}
-.course-row-main strong{color:#244b3b;font-size:14px}
-.course-row-main small{color:#6b7872;font-size:11px;margin-top:3px}
-.course-row-remove{background:#fbecec;color:#a93b3b;border:1px solid #f0c5c5;border-radius:9px;width:30px;height:30px;font-size:18px;cursor:pointer;font-family:inherit;line-height:1}
-.course-row-remove:hover{background:#f6dada}
-.courses-empty{padding:18px !important;border:1px dashed #d8e4dc;border-radius:13px;background:#fafdfb;color:#7a8780;font-size:13px}
-.course-modal-actions{justify-content:flex-start !important;gap:10px}
-.course-form-error{background:#fff0f0;color:#a12525;border:1px solid #f3c8c8;border-radius:11px;padding:10px 12px;font-size:12px;margin-top:8px}
-.course-desc-textarea{width:100%;border:1px solid #dbe1ea;border-radius:11px;padding:11px 12px;font:inherit;color:#172235;background:#fff;resize:vertical;min-height:80px}
-.course-desc-textarea:focus{outline:none;border-color:#91a8c4;box-shadow:0 0 0 3px rgba(36,77,125,.08)}
-.course-photo-card{display:grid;grid-template-columns:42px 1fr;gap:12px;align-items:center;padding:14px;border:1px solid #dfe9e4;border-radius:16px;background:linear-gradient(180deg,#ffffff,#f8fbf9);box-shadow:0 7px 20px rgba(36,75,59,.06)}
-.course-photo-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#edf5f0;color:#244b3b;font-weight:900;font-size:20px}
-.course-photo-info strong{display:block;color:#244b3b;font-size:13px}
-.course-photo-info small{display:block;margin-top:3px;color:#87938c;font-size:10px}
-.course-photo-card .file-picker{grid-column:1 / -1;position:relative;display:block}
-.course-photo-card .file-picker span{display:flex;align-items:center;justify-content:center;height:40px;border:1px dashed #b8ccbf;border-radius:11px;background:#f7fbf8;color:#244b3b;font-size:11px;font-weight:800;cursor:pointer}
-.course-photo-card .file-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .pv-modal .pick-scroll{padding:0 4px}
 .pv-modal .pv-field{display:flex;flex-direction:column;gap:7px;font-size:13px;color:#5d6879;margin-bottom:12px}
 .pv-modal .pv-field input,.pv-modal .pv-field select,.pv-modal .pv-field textarea{border:1px solid #dbe1ea;border-radius:11px;padding:11px 12px;font:inherit;color:#172235;background:#fff;width:100%}
@@ -762,194 +541,6 @@ ibanDigits?.addEventListener('input',syncIban); syncIban();
  });
 
  document.querySelectorAll('input[name="first_name"],input[name="last_name"],input[name="father_name"],input[name="secondary_job"]').forEach(el=>el.addEventListener('input',()=>{el.value=el.value.replace(/[0-9۰-۹]/g,'');}));
-
- /* ---------- دوره‌های گذرانده (افزودن در پاپ‌آپ + نمایش در فهرست) ---------- */
- (function(){
-  const list = document.getElementById('coursesList');
-  const jsonInput = document.getElementById('coursesJson');
-  const formEl = document.getElementById('personnelForm');
-  if (!list || !jsonInput || !formEl) return;
-
-  // آرایه‌ای از دوره‌های جدید که در همین فرم اضافه شده‌اند (هنوز در DB نیستند)
-  const pending = [];
-  // شناسهٔ دوره‌هایی که در حالت ویرایش حذف شده‌اند (تا در سمت سرور از DB پاک شوند)
-  const removedExisting = new Set();
-  let editingIdx = null; // اندیس دوره‌ای که در حال ویرایش آن هستیم (null = افزودن جدید)
-
-  // رندر دوره‌های pending + دوره‌های موجود
-  function render() {
-    // دوره‌های موجودی که حذف نشده‌اند
-    const existingRows = [...list.querySelectorAll('.course-row[data-existing-id]')]
-      .filter(row => !removedExisting.has(row.dataset.existingId));
-    list.innerHTML = '';
-    existingRows.forEach(row => list.appendChild(row));
-    pending.forEach((c, i) => {
-      const row = document.createElement('div');
-      row.className = 'course-row';
-      row.dataset.idx = String(i);
-      const dateText = c.date ? `تاریخ: ${escapeHtml(c.date)}` : '';
-      const descText = c.description ? `توضیح: ${escapeHtml(truncate(c.description, 80))}` : '';
-      const photoText = c._hasPhoto ? 'عکس: ضمیمه شد' : '';
-      row.innerHTML = `
-        <div class="course-row-icon">✓</div>
-        <div class="course-row-main">
-          <strong>${escapeHtml(c.name)}</strong>
-          ${dateText ? `<small>${dateText}</small>` : ''}
-          ${descText ? `<small>${descText}</small>` : ''}
-          ${photoText ? `<small>${photoText}</small>` : ''}
-        </div>
-        <button type="button" class="course-row-remove" title="حذف" data-remove-pending="${i}">×</button>
-      `;
-      list.appendChild(row);
-    });
-    // دکمه‌های حذف را فعال کن
-    list.querySelectorAll('[data-remove-pending]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const i = parseInt(btn.dataset.removePending, 10);
-        pending.splice(i, 1);
-        render();
-        syncJson();
-      });
-    });
-    list.querySelectorAll('[data-remove-existing]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.removeExisting;
-        removedExisting.add(id);
-        render();
-        syncRemovedInput();
-      });
-    });
-
-    // نمایش/پنهان کردن پیام خالی
-    const existingVisible = list.querySelectorAll('.course-row').length;
-    let empty = list.querySelector('.courses-empty');
-    if (existingVisible === 0 && !empty) {
-      empty = document.createElement('div');
-      empty.className = 'empty courses-empty';
-      empty.textContent = 'هنوز دوره‌ای اضافه نشده است.';
-      list.appendChild(empty);
-    } else if (existingVisible > 0 && empty) {
-      empty.remove();
-    }
-  }
-
-  function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
-  function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
-
-  function syncJson() {
-    // فقط داده‌های متنی به فرم ارسال می‌شود؛ فایل‌ها به‌صورت داینامیک به فرم اضافه می‌شوند
-    const payload = pending.map(c => ({ name: c.name, date: c.date, description: c.description }));
-    jsonInput.value = JSON.stringify(payload);
-  }
-
-  function syncRemovedInput() {
-    // فیلد courses_removed را به‌روز کن
-    let removedInput = formEl.querySelector('input[name="courses_removed"]');
-    if (!removedInput) {
-      removedInput = document.createElement('input');
-      removedInput.type = 'hidden';
-      removedInput.name = 'courses_removed';
-      formEl.appendChild(removedInput);
-    }
-    removedInput.value = JSON.stringify([...removedExisting]);
-  }
-
-  // ---- ثبت دوره در پاپ‌آپ ----
-  const applyBtn = document.getElementById('courseApply');
-  const nameInput = document.getElementById('courseName');
-  const dateInput = document.getElementById('courseDate');
-  const descInput = document.getElementById('courseDescription');
-  const photoInput = document.getElementById('coursePhotoFile');
-  const errBox = document.getElementById('courseFormError');
-
-  function showError(msg) {
-    if (!errBox) return;
-    errBox.textContent = msg;
-    errBox.hidden = false;
-  }
-  function clearError() {
-    if (!errBox) return;
-    errBox.textContent = '';
-    errBox.hidden = true;
-  }
-
-  // تابع کمکی برای ریست کامل همه چیز (شامل برچسب نام فایل)
-  function resetCourseModal() {
-    if (nameInput) nameInput.value = '';
-    if (dateInput) dateInput.value = '';
-    if (descInput) descInput.value = '';
-    if (photoInput) photoInput.value = '';
-    // بازنشانی برچسب نام فایل (اگر pv-modal.js آن را تغییر داده باشد)
-    const fileLabel = document.querySelector('#courseModal [data-file-label]');
-    if (fileLabel) fileLabel.textContent = 'انتخاب فایل';
-    clearError();
-  }
-
-  if (applyBtn) {
-    applyBtn.addEventListener('click', () => {
-      clearError();
-      const name = (nameInput.value || '').trim();
-      if (!name) { showError('«عنوان دوره» را وارد کنید.'); nameInput.focus(); return; }
-      const date = (dateInput.value || '').trim();
-      const description = (descInput.value || '').trim();
-      const file = photoInput.files && photoInput.files[0];
-      let hasPhoto = false;
-      if (file) {
-        if (file.size > 8 * 1024 * 1024) { showError('حجم عکس دوره باید حداکثر ۸ مگابایت باشد.'); return; }
-        const okTypes = ['image/jpeg','image/png','image/webp','application/pdf'];
-        if (!okTypes.includes(file.type)) { showError('فرمت فایل مجاز نیست.'); return; }
-        hasPhoto = true;
-      }
-      pending.push({ name, date, description, _hasPhoto: hasPhoto, _photoFile: file || null });
-      // ریست کردن فیلدهای پاپ‌آپ و بستن
-      resetCourseModal();
-      render();
-      syncJson();
-      // بستن پاپ‌آپ
-      document.querySelectorAll('#courseModal [data-pv-close]')[0]?.click();
-    });
-  }
-
-  // پاک کردن خطا و ریست فیلدها هنگام باز شدن پاپ‌آپ
-  document.querySelectorAll('[data-pv-open="courseModal"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      // اندکی صبر تا reset انجام شود
-      setTimeout(resetCourseModal, 50);
-    });
-  });
-
-  // ---- هنگام submit فرم اصلی: فایل‌های دوره‌ها را به فرم اضافه کن ----
-  formEl.addEventListener('submit', (ev) => {
-    // ابتدا فیلدهای فایل قبلی را پاک کن
-    formEl.querySelectorAll('input[type=file][data-course-photo]').forEach(el => el.remove());
-
-    // فیلد files دوره‌ها به فرم اصلی اضافه می‌شود
-    let hasFiles = false;
-    pending.forEach((c, i) => {
-      if (c._photoFile) {
-        try {
-          const dt = new DataTransfer();
-          dt.items.add(c._photoFile);
-          const inp = document.createElement('input');
-          inp.type = 'file';
-          inp.name = `course_photo_${i}`;
-          inp.style.display = 'none';
-          inp.setAttribute('data-course-photo', '1');
-          inp.files = dt.files;
-          formEl.appendChild(inp);
-          hasFiles = true;
-        } catch (err) {
-          // اگر DataTransfer پشتیبانی نشد، فایل این دوره ثبت نمی‌شود
-          console.warn('course photo upload failed', err);
-        }
-      }
-    });
-    syncJson();
-    syncRemovedInput();
-  });
-
-  render();
- })();
 })();
 </script>
 <script src="<?= e(asset_url('assets/pv-modal.js')) ?>" defer></script>
