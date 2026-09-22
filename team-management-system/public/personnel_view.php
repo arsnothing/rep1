@@ -3,19 +3,34 @@ require __DIR__ . '/../app/bootstrap.php'; require_login();
 $id=filter_input(INPUT_GET,'id',FILTER_VALIDATE_INT);$st=$pdo->prepare(personnel_select_sql('p').' WHERE p.id=?');$st->execute([$id]);$r=$st->fetch();if(!$r||!can_view_unit($r['unit'])){http_response_code(404);exit('رکورد یافت نشد.');}
 $position=position_options()[$r['position_type']]??$r['position_type'];$edu=education_options()[$r['education_status']]??'—';$marital=['single'=>'مجرد','married'=>'متأهل','separated'=>'متارکه'][$r['marital_status']??'']??'—';$docs=$pdo->prepare('SELECT * FROM personnel_documents WHERE personnel_id=? ORDER BY id DESC');$docs->execute([$r['id']]);$docs=$docs->fetchAll();
 $tab=$_GET['tab']??'profile';
-$finance=$pdo->prepare('SELECT t.id,t.transfer_type,t.transfer_date,t.reason,t.note,i.amount,i.iban,i.beneficiary_name FROM financial_transactions t JOIN financial_transaction_items i ON i.transaction_id=t.id WHERE i.personnel_id=? ORDER BY t.transfer_date DESC,t.id DESC');$finance->execute([$r['id']]);$financeRows=$finance->fetchAll();
+/* ---- امور رفاهی (ستون‌های جدید ممکن است روی دیتابیس قدیمی نباشند) ---- */
+$finHasTitle=$finHasSeries=$finHasDetail=false;
+try { $finHasTitle=(bool)$pdo->query("SHOW COLUMNS FROM financial_transactions LIKE 'welfare_title'")->fetch(); } catch (Throwable $e) {}
+try { $finHasSeries=(bool)$pdo->query("SHOW COLUMNS FROM financial_transactions LIKE 'series'")->fetch(); } catch (Throwable $e) {}
+try { $finHasDetail=(bool)$pdo->query("SHOW COLUMNS FROM financial_transaction_items LIKE 'detail'")->fetch(); } catch (Throwable $e) {}
+$finance=$pdo->prepare('SELECT t.id,t.transfer_type,t.transfer_date,t.reason,t.note'
+    .($finHasTitle?',t.welfare_title':'').($finHasSeries?',t.series':'')
+    .',i.amount'.($finHasDetail?',i.detail':'').',i.iban,i.beneficiary_name
+      FROM financial_transactions t JOIN financial_transaction_items i ON i.transaction_id=t.id
+      WHERE i.personnel_id=? ORDER BY t.transfer_date DESC,t.id DESC');
+$finance->execute([$r['id']]);$financeRows=$finance->fetchAll();
 $orders=$pdo->prepare('SELECT * FROM personnel_orders WHERE personnel_id=? ORDER BY COALESCE(start_date,order_date,created_at) DESC,id DESC');$orders->execute([$r['id']]);$resourceOrders=$orders->fetchAll();
 $equipments=$pdo->prepare('SELECT * FROM personnel_equipment WHERE personnel_id=? ORDER BY COALESCE(delivery_date,created_at) DESC,id DESC');$equipments->execute([$r['id']]);$resourceEquipments=$equipments->fetchAll();
 
 /* ---- پرونده انضباطی (تشویق / تذکر / توبیخ) ---- */
 $disciplinaryTypes=['encouragement'=>'موارد تشویق ثبت شده','warning'=>'موارد تذکر ثبت شده','reprimand'=>'موارد توبیخ ثبت شده'];
 $disciplinaryShort=['encouragement'=>'تشویق','warning'=>'تذکر','reprimand'=>'توبیخ'];
+/* برچسب «کننده»: در تذکر «دهنده» است نه «کننده» */
+$disciplinaryIssuerLabels=['encouragement'=>'تشویق‌کننده','warning'=>'تذکر دهنده','reprimand'=>'توبیخ‌کننده'];
+/* برگه سند برای هر سه نوع (تشویق، تذکر، توبیخ) — برچسب هرکدام متفاوت است. */
+$disciplinaryDocLabels=['encouragement'=>'برگه تشویق','warning'=>'برگه تذکر','reprimand'=>'برگه توبیخ'];
 $disciplinaryGroups=array_fill_keys(array_keys($disciplinaryTypes),[]);
 if($tab==='disciplinary'){
     $discColumns=[];foreach($pdo->query('SHOW COLUMNS FROM disciplinary_reports') as $col){$discColumns[strtolower($col['Field'])]=true;}
     $dateExpr=isset($discColumns['report_date'])?'COALESCE(d.report_date,DATE(d.created_at))':'DATE(d.created_at)';
     $typeExpr=isset($discColumns['subject_title'])?"COALESCE(NULLIF(d.subject_title,''),s.subject_name)":'s.subject_name';
-    $dr=$pdo->prepare('SELECT d.id,d.report_type,d.reason,'.$dateExpr.' AS report_day,'.$typeExpr.' AS subject_name FROM disciplinary_reports d LEFT JOIN disciplinary_report_subjects s ON s.id=d.subject_id WHERE d.personnel_id=? ORDER BY report_day DESC,d.id DESC');
+    $issuerExpr=isset($discColumns['issuer_name'])?'d.issuer_name':'NULL';
+    $dr=$pdo->prepare('SELECT d.id,d.report_type,d.reason,'.$issuerExpr.' AS issuer_name,'.$dateExpr.' AS report_day,'.$typeExpr.' AS subject_name FROM disciplinary_reports d LEFT JOIN disciplinary_report_subjects s ON s.id=d.subject_id WHERE d.personnel_id=? ORDER BY report_day DESC,d.id DESC');
     $dr->execute([$r['id']]);
     foreach($dr->fetchAll() as $row){ $key=(string)$row['report_type']; if(isset($disciplinaryGroups[$key])) $disciplinaryGroups[$key][]=$row; }
 }
@@ -81,7 +96,7 @@ if($tab==='orders'){
 $vehicleLabels=['car'=>'خودرو','motorcycle'=>'موتور سیکلت'];
 require __DIR__.'/../app/partials/header.php'; ?>
 <?php
-$printTitles = ['profile'=>'اطلاعات فردی','disciplinary'=>'گزارش پرونده انضباطی','finance'=>'گزارش وضعیت مالی','training'=>'گزارش وضعیت آموزشی','orders'=>'گزارش احکام','equipment'=>'گزارش وضعیت تجهیزات'];
+$printTitles = ['profile'=>'اطلاعات فردی','disciplinary'=>'گزارش پرونده انضباطی','finance'=>'گزارش وضعیت رفاهی','training'=>'گزارش وضعیت آموزشی','orders'=>'گزارش احکام','equipment'=>'گزارش وضعیت تجهیزات'];
 $printTitle = ($printTitles[$tab] ?? 'پرونده عنصر') . ' — ' . ($r['full_name'] ?? '');
 require __DIR__.'/../app/partials/print_frame.php';
 ?>
@@ -114,7 +129,7 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 <?php if($canAddPhoto): ?><span class="avatar-add" aria-hidden="true">+</span><?php endif; ?>
 </<?= $canAddPhoto?'a':'div' ?>></div>
 </div>
-<div class="tabs"><a class="tab <?=$tab==='profile'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=profile">اطلاعات فردی</a><a class="tab <?=$tab==='disciplinary'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=disciplinary">پرونده انضباطی</a><a class="tab <?=$tab==='finance'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=finance">وضعیت مالی</a><a class="tab <?=$tab==='training'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=training">وضعیت آموزشی</a><a class="tab <?=$tab==='orders'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=orders">سوابق احکام</a><a class="tab <?=$tab==='equipment'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=equipment">وضعیت تجهیزات</a><?php if(in_array($tab,['profile','finance','training','orders','disciplinary','equipment'],true)): ?><button type="button" class="tab-action print" onclick="window.print()">دریافت PDF</button><?php endif; ?><?php if(can_manage_personnel() && !$isDismissed): ?><?php if($tab==='profile'): ?><a class="tab-action edit" href="personnel_form.php?id=<?=(int)$r['id']?>">ویرایش پرونده</a><?php elseif($tab==='disciplinary'): ?><button type="button" class="tab-action danger" data-pv-open="dismissModal">برکناری</button><?php endif; ?><?php endif; ?></div>
+<div class="tabs"><a class="tab <?=$tab==='profile'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=profile">اطلاعات فردی</a><a class="tab <?=$tab==='disciplinary'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=disciplinary">پرونده انضباطی</a><a class="tab <?=$tab==='finance'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=finance">وضعیت رفاهی</a><a class="tab <?=$tab==='training'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=training">وضعیت آموزشی</a><a class="tab <?=$tab==='orders'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=orders">سوابق احکام</a><a class="tab <?=$tab==='equipment'?'active':''?>" href="personnel_view.php?id=<?=$r['id']?>&tab=equipment">وضعیت تجهیزات</a><?php if(in_array($tab,['profile','finance','training','orders','disciplinary','equipment'],true)): ?><button type="button" class="tab-action print" onclick="window.print()">دریافت PDF</button><?php endif; ?><?php if(can_manage_personnel() && !$isDismissed): ?><?php if($tab==='profile'): ?><a class="tab-action edit" href="personnel_form.php?id=<?=(int)$r['id']?>">ویرایش پرونده</a><?php elseif($tab==='disciplinary'): ?><button type="button" class="tab-action danger" data-pv-open="dismissModal">برکناری</button><?php endif; ?><?php endif; ?></div>
 <?php if($tab==='equipment'): ?>
 <div class="panel table-wrap equip-table"><table>
   <thead><tr><th class="col-row">ردیف</th><th class="col-kind">نوع آماد</th><th class="col-model">مدل</th><th class="col-date">تاریخ تحویل</th><th class="col-date">تاریخ بازتحویل</th></tr></thead>
@@ -137,20 +152,20 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 <?php if(isset($_GET['disc_saved'])):?><div class="alert success">پرونده <?=e($disciplinaryTypes[$_GET['disc_saved']]??'')?> ثبت شد.</div><?php endif;?>
 <?php if(!empty($_GET['disc_auto'])):?><div class="alert danger">به ازای هر ۳ تذکر، <?=fa_digits((string)(int)$_GET['disc_auto'])?> توبیخ به‌صورت خودکار ثبت شد.</div><?php endif;?>
 <?php if(isset($_GET['auto_dismissed'])):?><div class="alert danger">با ثبت سه توبیخ، این عنصر به‌صورت خودکار برکنار شد.</div><?php endif;?>
-<?php if(isset($_GET['disc_error'])):?><div class="alert danger"><?=['date'=>'تاریخ واردشده صحیح نیست.','type'=>'نوع پرونده معتبر نیست.','schema'=>'ساختار دیتابیس نیاز به به‌روزرسانی دارد. فایل database/team_management.sql را اجرا کنید.','save'=>'ثبت پرونده انجام نشد.'][$_GET['disc_error']]??'بابت و نوع پرونده را تکمیل کنید.'?></div><?php endif;?>
-<?php if(isset($_GET['dismiss_error'])):?><div class="alert danger"><?=['date'=>'تاریخ برکناری صحیح نیست.','file'=>'اسناد برکناری باید PDF/JPG/PNG/WEBP و حداکثر ۸ مگابایت باشند.','schema'=>'ساختار دیتابیس نیاز به به‌روزرسانی دارد. فایل database/team_management.sql را اجرا کنید.'][$_GET['dismiss_error']]??'علت برکناری را وارد کنید.'?></div><?php endif;?>
+<?php if(isset($_GET['disc_error'])):?><div class="alert danger"><?=['date'=>'تاریخ واردشده صحیح نیست.','type'=>'نوع پرونده معتبر نیست.','file'=>'برگه سند باید PDF/JPG/PNG/WEBP و حداکثر ۸ مگابایت باشد.','schema'=>'ساختار دیتابیس نیاز به به‌روزرسانی دارد. فایل database/team_management.sql را اجرا کنید.','save'=>'ثبت پرونده انجام نشد.'][$_GET['disc_error']]??'همه فیلدها را تکمیل کنید.'?></div><?php endif;?>
+<?php if(isset($_GET['dismiss_error'])):?><div class="alert danger"><?=['date'=>'تاریخ برکناری صحیح نیست.','date_required'=>'تاریخ برکناری را وارد کنید.','file'=>'برگه برکناری باید PDF/JPG/PNG/WEBP و حداکثر ۸ مگابایت باشد.','file_required'=>'برگه برکناری را انتخاب کنید.','schema'=>'ساختار دیتابیس نیاز به به‌روزرسانی دارد. فایل database/team_management.sql را اجرا کنید.'][$_GET['dismiss_error']]??'علت برکناری را وارد کنید.'?></div><?php endif;?>
 <?php foreach($disciplinaryTypes as $typeKey=>$typeLabel): $typeRows=$disciplinaryGroups[$typeKey]; ?>
 <section class="panel disc-panel disc-<?=$typeKey?>">
   <div class="disc-panel-head">
     <div class="disc-panel-title"><span class="disc-dot"></span><h3><?=e($typeLabel)?></h3><span class="disc-count"><?=fa_digits((string)count($typeRows))?></span></div>
-    <?php if(can_manage_personnel() && !$isDismissed):?><button type="button" class="disc-add-btn" data-pv-open="discModal" data-disc-type="<?=$typeKey?>" data-disc-title="<?=e($typeLabel)?>" aria-label="ثبت <?=e($typeLabel)?>">+</button><?php endif;?>
+    <?php if(can_manage_personnel() && !$isDismissed):?><button type="button" class="disc-add-btn" data-pv-open="discModal" data-disc-type="<?=$typeKey?>" data-disc-title="ثبت <?=e($disciplinaryShort[$typeKey]??$typeLabel)?>" data-disc-short="<?=e($disciplinaryShort[$typeKey]??'')?>" data-disc-issuer="<?=e($disciplinaryIssuerLabels[$typeKey]??'')?>" data-disc-doc="<?= isset($disciplinaryDocLabels[$typeKey]) ? '1' : '0' ?>" data-disc-doc-title="<?=e($disciplinaryDocLabels[$typeKey]??'')?>" aria-label="ثبت <?=e($typeLabel)?>">+</button><?php endif;?>
   </div>
   <div class="table-wrap disc-table"><table>
-    <thead><tr><th class="col-row">ردیف</th><th class="col-date">تاریخ</th><th class="col-reason">بابت</th><th class="col-type">نحوه <?=e($disciplinaryShort[$typeKey]??$typeLabel)?></th></tr></thead>
+    <thead><tr><th class="col-row">ردیف</th><th class="col-date">تاریخ</th><th class="col-reason">علت</th><th class="col-issuer"><?=e($disciplinaryIssuerLabels[$typeKey]??'')?></th><th class="col-type">نحوه <?=e($disciplinaryShort[$typeKey]??$typeLabel)?></th></tr></thead>
     <tbody>
       <?php $discRow=0; foreach($typeRows as $d): $discRow++; ?>
-      <tr><td class="col-row"><?=fa_digits((string)$discRow)?></td><td class="col-date"><?=jalali_display($d['report_day'])?></td><td class="col-reason"><?=e($d['reason']?:'—')?></td><td class="col-type"><?=e($d['subject_name']?:'—')?></td></tr>
-      <?php endforeach; if(!$typeRows):?><tr><td colspan="4" class="empty">موردی ثبت نشده است</td></tr><?php endif;?>
+      <tr><td class="col-row"><?=fa_digits((string)$discRow)?></td><td class="col-date"><?=jalali_display($d['report_day'])?></td><td class="col-reason"><?=e($d['reason']?:'—')?></td><td class="col-issuer"><?=e($d['issuer_name']?:'—')?></td><td class="col-type"><?=e($d['subject_name']?:'—')?></td></tr>
+      <?php endforeach; if(!$typeRows):?><tr><td colspan="5" class="empty">موردی ثبت نشده است</td></tr><?php endif;?>
     </tbody>
   </table></div>
 </section>
@@ -206,7 +221,25 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
   </tbody>
 </table></div>
 <?php elseif($tab==='finance'): ?>
-<div class="panel table-wrap finance-table"><table><thead><tr><th class="col-row">ردیف</th><th class="col-amount">مبلغ واریزی</th><th class="col-date">تاریخ</th><th class="col-reason">بابت</th><th class="col-kind">تکی/گروهی</th></tr></thead><tbody><?php $financeRow=0; foreach($financeRows as $f): $financeRow++; ?><tr><td class="col-row"><?=fa_digits((string)$financeRow)?></td><td class="col-amount"><strong><?=e(format_amount($f['amount']))?></strong></td><td class="col-date"><?=jalali_display($f['transfer_date'])?></td><td class="col-reason"><?=e($f['reason']?:'—')?></td><td class="col-kind"><span class="kind-chip <?=$f['transfer_type']==='single'?'single':'group'?>"><?=($f['transfer_type']==='single'?'تکی':'گروهی')?></span></td></tr><?php endforeach;if(!$financeRows):?><tr><td colspan="5" class="empty">سابقه مالی ثبت نشده است.</td></tr><?php endif;?></tbody></table></div>
+<div class="panel table-wrap finance-table"><table>
+  <thead><tr><th class="col-row">ردیف</th><th class="col-date">تاریخ</th><th class="col-title">عنوان</th><th class="col-value">نوع یا مبلغ</th><th class="col-reason">بابت</th><th class="col-series">سری</th></tr></thead>
+  <tbody>
+  <?php $financeRow=0; $welfareTitles=welfare_title_options(); foreach($financeRows as $f): $financeRow++;
+      $wTitle  = $finHasTitle ? (string)$f['welfare_title'] : 'cash';
+      $wDetail = $finHasDetail ? (string)($f['detail'] ?? '') : '';
+      $wSeries = $finHasSeries ? trim((string)($f['series'] ?? '')) : '';
+  ?>
+    <tr>
+      <td class="col-row"><?=fa_digits((string)$financeRow)?></td>
+      <td class="col-date"><?=jalali_display($f['transfer_date'])?></td>
+      <td class="col-title"><strong><?=e($welfareTitles[$wTitle] ?? $wTitle)?></strong></td>
+      <td class="col-value"><?=e(welfare_value_text($wTitle, $f['amount'], $wDetail))?></td>
+      <td class="col-reason"><?=e($f['reason']?:'—')?></td>
+      <td class="col-series"><?=e($wSeries!=='' ? fa_digits($wSeries) : '—')?></td>
+    </tr>
+  <?php endforeach; if(!$financeRows): ?><tr><td colspan="6" class="empty">موردی ثبت نشده است</td></tr><?php endif; ?>
+  </tbody>
+</table></div>
 <?php else: ?>
 <?php
   $pvExtraCols = personnel_extra_columns();
@@ -214,19 +247,17 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
   $healthOpts=health_status_options(); $licTypeOpts=license_type_options(); $licLevelOpts=license_level_options();
   $healthText='—';
   if($pvHas('health_status') && ($r['health_status']??'')!==''){
-      $healthText = ($healthOpts[$r['health_status']] ?? $r['health_status']);
+      $healthText = health_status_label($r['health_status']) ?: (string)$r['health_status'];
       if(trim((string)($r['health_note']??''))!=='') $healthText .= ' — '.$r['health_note'];
   }
   $licText='—';
   if($pvHas('license_types')){
-      $licList = array_filter(explode(',', (string)($r['license_types']??'')));
-      if($licList){
-          $licText = implode('، ', array_map(fn($k)=>$licTypeOpts[$k]??$k, $licList));
-          if(($r['license_level']??'')!=='') $licText .= ' — تسلط '.($licLevelOpts[$r['license_level']]??'');
-      }
+      // سطح تسلط برای هر نوع جداگانه ذخیره می‌شود؛ «ویژه» عنوان اختصاصی دارد.
+      $licSummary = license_summary((string)($r['license_types']??''), (string)($r['license_level']??''), (string)($r['license_special_title']??''));
+      if($licSummary!=='') $licText=$licSummary;
   }
   $hasReferrer = false;
-  foreach(['referrer_first_name','referrer_last_name','referrer_national_id','referrer_mobile'] as $rf){
+  foreach(['referrer_first_name','referrer_last_name','referrer_mobile'] as $rf){
       if($pvHas($rf) && trim((string)($r[$rf]??''))!==''){ $hasReferrer=true; break; }
   }
 ?>
@@ -242,9 +273,13 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 <div><span>وضعیت تأهل</span><strong><?=e($marital)?></strong></div>
 <?php if($pvHas('health_status')): ?><div><span>وضعیت سلامت</span><strong><?=e($healthText)?></strong></div><?php endif; ?>
 <?php if($pvHas('license_types')): ?><div><span>وضعیت گواهینامه</span><strong><?=e($licText)?></strong></div><?php endif; ?>
+<?php if($pvHas('languages')): ?><div><span>زبان خارجی</span><strong><?=e($r['languages']?:'—')?></strong></div><?php endif; ?>
+<?php if($pvHas('sport_skill')): ?><div><span>مهارت ورزشی</span><strong><?=e($r['sport_skill']?:'—')?></strong></div><?php endif; ?>
+<?php if($pvHas('profession')): ?><div><span>حرفه و تخصص</span><strong><?=e($r['profession']?:'—')?></strong></div><?php endif; ?>
 <?php if($pvHas('landline_phone')): ?><div><span>شماره تماس ثابت</span><strong><?=e($r['landline_phone']?:'—')?></strong></div><?php endif; ?>
 <div><span>شماره تماس همراه</span><strong><?=e($r['mobile']?:'—')?></strong></div>
 <div><span>شماره تماس اضطراری</span><strong><?=e($r['emergency_phone']?:'—')?></strong></div>
+<?php if($pvHas('postal_code')): ?><div><span>کد پستی محل سکونت</span><strong><?=e($r['postal_code']?fa_digits((string)$r['postal_code']):'—')?></strong></div><?php endif; ?>
 <div class="wide"><span>آدرس محل سکونت</span><strong><?=nl2br(e($r['residence_address']?:'—'))?></strong></div>
 </div>
 <?php if($hasReferrer): ?>
@@ -252,7 +287,6 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 <div class="detail-card">
 <div><span>نام</span><strong><?=e($r['referrer_first_name']?:'—')?></strong></div>
 <div><span>نام خانوادگی</span><strong><?=e($r['referrer_last_name']?:'—')?></strong></div>
-<div><span>کد ملی</span><strong><?=e($r['referrer_national_id']?:'—')?></strong></div>
 <div><span>شماره تماس همراه</span><strong><?=e($r['referrer_mobile']?:'—')?></strong></div>
 </div>
 <?php endif; ?>
@@ -320,7 +354,7 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 <?php if($tab==='disciplinary' && can_manage_personnel() && !$isDismissed): ?>
 <div class="pv-modal" id="dismissModal" aria-hidden="true">
   <div class="pv-modal-backdrop" data-pv-close></div>
-  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="dismissModalTitle">
+  <section class="pv-modal-card pv-modal-scroll" role="dialog" aria-modal="true" aria-labelledby="dismissModalTitle">
     <header class="pv-modal-head">
       <div><span class="pv-modal-eyebrow">تغییر وضعیت عنصر</span><h2 id="dismissModalTitle">برکناری عنصر</h2></div>
       <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
@@ -329,12 +363,14 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
       <input type="hidden" name="csrf" value="<?=e(csrf_token())?>">
       <input type="hidden" name="personnel_id" value="<?=(int)$r['id']?>">
       <input type="hidden" name="return_to" value="personnel_view.php?id=<?=(int)$r['id']?>&tab=disciplinary">
-      <label class="pv-field"><span>تاریخ برکناری</span><input name="dismissal_date_jalali" class="jalali" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="۱۴۰۷/۰۷/۰۷"></label>
+      <div class="pv-modal-body">
+      <label class="pv-field"><span>تاریخ برکناری</span><input name="dismissal_date_jalali" class="jalali" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="۱۴۰۷/۰۷/۰۷" required></label>
       <label class="pv-field pv-field-wide"><span>علت برکناری</span><input name="reason" maxlength="500" required placeholder="علت برکناری را وارد کنید"></label>
       <div class="document-upload-card pv-upload-card pv-field-wide">
         <div class="document-upload-icon">▣</div>
-        <div><strong>اسناد برکناری</strong><small>حداکثر ۵ فایل، هرکدام تا ۸MB</small></div>
-        <label class="file-picker"><span data-file-label="انتخاب فایل">انتخاب فایل</span><input type="file" name="dismissal_documents[]" multiple accept="application/pdf,image/jpeg,image/png,image/webp"></label>
+        <div><strong>برگه برکناری</strong><small>یک فایل، حداکثر ۸MB</small></div>
+        <label class="file-picker"><span data-file-label="انتخاب فایل">انتخاب فایل</span><input type="file" name="dismissal_documents[]" required accept="application/pdf,image/jpeg,image/png,image/webp"></label>
+      </div>
       </div>
       <div class="pv-modal-actions">
         <button type="submit" class="btn pv-btn-danger">ثبت</button>
@@ -345,18 +381,26 @@ $metaItems = array_values(array_filter(array_map('trim', $metaItems), static fn(
 </div>
 <div class="pv-modal" id="discModal" aria-hidden="true">
   <div class="pv-modal-backdrop" data-pv-close></div>
-  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="discModalTitle">
+  <section class="pv-modal-card pv-modal-scroll" role="dialog" aria-modal="true" aria-labelledby="discModalTitle">
     <header class="pv-modal-head">
       <div><span class="pv-modal-eyebrow">پرونده انضباطی</span><h2 id="discModalTitle" data-disc-title-target>ثبت پرونده</h2></div>
       <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
     </header>
-    <form method="post" action="disciplinary_store.php" class="pv-modal-form">
+    <form method="post" action="disciplinary_store.php" enctype="multipart/form-data" class="pv-modal-form">
       <input type="hidden" name="csrf" value="<?=e(csrf_token())?>">
       <input type="hidden" name="personnel_id" value="<?=(int)$r['id']?>">
       <input type="hidden" name="report_type" value="" data-disc-type-target>
-      <label class="pv-field"><span>تاریخ</span><input name="report_date_jalali" class="jalali" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="۱۴۰۷/۰۷/۰۷"></label>
-      <label class="pv-field pv-field-wide"><span>بابت</span><input name="reason" maxlength="255" required placeholder="بابت را وارد کنید"></label>
-      <label class="pv-field pv-field-wide"><span data-disc-subject-label>نوع</span><input name="subject_title" maxlength="120" required placeholder="نوع را وارد کنید" data-disc-subject-input></label>
+      <div class="pv-modal-body">
+      <label class="pv-field"><span>تاریخ</span><input name="report_date_jalali" class="jalali" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="۱۴۰۷/۰۷/۰۷" required></label>
+      <label class="pv-field pv-field-wide"><span>علت</span><input name="reason" maxlength="255" required placeholder="علت را وارد کنید"></label>
+      <label class="pv-field pv-field-wide"><span data-disc-issuer-label>کننده</span><input name="issuer_name" maxlength="120" required placeholder="نام را وارد کنید" data-disc-issuer-input></label>
+      <label class="pv-field pv-field-wide"><span data-disc-subject-label>نحوه</span><input name="subject_title" maxlength="120" required placeholder="نحوه را وارد کنید" data-disc-subject-input></label>
+      <div class="document-upload-card pv-upload-card pv-field-wide" data-disc-doc-card hidden>
+        <div class="document-upload-icon">▣</div>
+        <div><strong data-disc-doc-label>برگه سند</strong><small>یک فایل، حداکثر ۸MB</small></div>
+        <label class="file-picker"><span data-file-label="انتخاب فایل">انتخاب فایل</span><input type="file" name="report_document" accept="application/pdf,image/jpeg,image/png,image/webp"></label>
+      </div>
+      </div>
       <div class="pv-modal-actions">
         <button type="submit" class="btn pv-btn-success">ثبت</button>
         <button type="button" class="btn secondary" data-pv-close>انصراف</button>
