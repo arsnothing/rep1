@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>پیش‌نمایش نوتیف v10.1</title>
+<style>
+body{font-family:Vazirmatn,Tahoma,sans-serif;background:#f5f7fb;padding:30px;color:#152033;margin:0;direction:rtl}
+.container{max-width:900px;margin:0 auto}
+.page-head{margin-bottom:25px}
+.page-head h1{margin:0;font-size:28px}
+.stat-card,.panel,.detail-card{background:#fff;border:1px solid #e5e9ef;border-radius:18px;box-shadow:0 8px 30px rgba(23,43,77,.05)}
+.panel{padding:0;margin-top:20px}
+.report-panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 24px}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:11px 17px;font-family:inherit;cursor:pointer}
+.btn.primary{background:#17365d;color:white}
+.btn.secondary{background:#eef2f7;color:#33445b}
+
+/* V10.1 CSS */
+.criminal-alerts-panel{border:1px solid #f3d9a0;background:linear-gradient(180deg,#fffaf0,#fff7e6);box-shadow:0 8px 24px rgba(193,142,40,.08);overflow:hidden;margin-top:20px}
+.criminal-alerts-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px;cursor:pointer;user-select:none;transition:background .15s ease}
+.criminal-alerts-head:hover{background:rgba(255,241,212,.5)}
+.criminal-alerts-head h2{margin:0;font-size:16px;color:#7a4f12;display:flex;align-items:center;gap:8px}
+.criminal-alerts-total{font-size:13px;color:#a87a3a;font-weight:700}
+.criminal-alerts-icon{color:#c8761a;font-size:20px;font-weight:900;display:inline-block;line-height:1}
+.criminal-alerts-counts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.criminal-alert-badge{padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700;line-height:1}
+.criminal-alert-expired{background:#fbe1e1;color:#a02525}
+.criminal-alert-warning{background:#fff0d0;color:#8a5a0e}
+.criminal-alerts-toggle{display:inline-block;font-size:18px;color:#7a4f12;transition:transform .2s ease;margin-inline-start:4px}
+.criminal-alerts-head.is-open .criminal-alerts-toggle{transform:rotate(180deg)}
+.criminal-alerts-body{padding:0 18px 16px;border-top:1px solid #f0e0bf;background:rgba(255,255,255,.4);animation:slideDown .2s ease}
+.criminal-alerts-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.criminal-alert-row{background:transparent;border-radius:0;padding:0;display:block}
+.criminal-alert-card{display:grid;grid-template-columns:1.6fr 1.6fr 1.7fr auto;align-items:center;gap:14px;padding:11px 14px;background:#fff;border-radius:12px;border:1px solid #f0e2c0;text-decoration:none;color:inherit;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.criminal-alert-card:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(193,142,40,.12);border-color:#e5c989}
+.criminal-alert-row.criminal-alert-expired .criminal-alert-card{border-color:#f1c5c5;background:linear-gradient(180deg,#fff,#fff7f7)}
+.criminal-alert-row.criminal-alert-warning .criminal-alert-card{border-color:#f0dca8;background:linear-gradient(180deg,#fff,#fffaf0)}
+.criminal-alert-name{font-weight:800;color:#17365d;font-size:14px;white-space:nowrap}
+.criminal-alert-meta{font-size:12px;color:#586579;white-space:nowrap}
+.criminal-alert-date{font-size:12px;color:#33445b;white-space:nowrap}
+.criminal-alert-days{font-weight:800;font-size:13px;padding:6px 10px;border-radius:10px;white-space:nowrap;text-align:center;min-width:88px}
+.criminal-alert-days-expired{background:#fbe1e1;color:#a02525}
+.criminal-alert-days-warning{background:#fff0d0;color:#8a5a0e}
+
+.report-panel{padding:24px;margin-top:20px}
+.report-panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-bottom:14px;border-bottom:1px solid #eef1f5;margin-bottom:14px}
+.report-panel-head h2{margin:0;font-size:17px;color:#23344d}
+
+/* استایل شبیه‌سازی برای پیش‌نمایش */
+.dashboard-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:25px}
+.stat-card{padding:22px;display:block;color:inherit;text-align:right}
+.stat-card span{color:#768196;font-size:13px}
+.stat-card strong{display:block;font-size:34px;margin:8px 0}
+.stat-card small{color:#7a8494}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="page-head"><h1>داشبورد</h1></div>
+
+<div class="dashboard-stats">
+  <div class="stat-card"><span>رسته اطلاعاتی</span><strong>۲۵</strong><small>عنصر</small></div>
+  <div class="stat-card"><span>رسته عملیاتی</span><strong>۱۸</strong><small>عنصر</small></div>
+  <div class="stat-card"><span>سطح دسترسی</span><strong style="font-size:21px">مدیر کل</strong></div>
+</div>
+
+<section class="report-panel">
+  <div class="report-panel-head">
+    <h2>گزارش عملکرد عناصر</h2>
+    <a class="btn primary" href="#">نمایش گزارش عملکرد</a>
+  </div>
+</section>
+
+<section class="criminal-alerts-panel" id="criminalAlertsPanel">
+  <header class="criminal-alerts-head" id="criminalAlertsHead" role="button" tabindex="0" aria-expanded="false" aria-controls="criminalAlertsBody">
+    <h2>
+      <span class="criminal-alerts-icon">⚠</span>
+      نوتیف تمدید گواهی سوء پیشینه
+      <span class="criminal-alerts-total">(۲)</span>
+    </h2>
+    <div class="criminal-alerts-counts">
+      <span class="criminal-alert-badge criminal-alert-expired">۱ منقضی</span>
+      <span class="criminal-alert-badge criminal-alert-warning">۱ نزدیک به انقضا</span>
+      <span class="criminal-alerts-toggle">▾</span>
+    </div>
+  </header>
+  <div class="criminal-alerts-body" id="criminalAlertsBody">
+    <ul class="criminal-alerts-list">
+      <li class="criminal-alert-row criminal-alert-expired">
+        <a class="criminal-alert-card" href="#">
+          <span class="criminal-alert-name">علی احمدی</span>
+          <span class="criminal-alert-meta">رسته اطلاعاتی · کد ملی ۱۲۳۴۵۶۷۸۹۰</span>
+          <span class="criminal-alert-date">صدور ۱۴۰۴/۱۰/۳۰ · انقضا ۱۴۰۵/۰۴/۳۰</span>
+          <span class="criminal-alert-days criminal-alert-days-expired">۶۲ روز گذشته</span>
+        </a>
+      </li>
+      <li class="criminal-alert-row criminal-alert-warning">
+        <a class="criminal-alert-card" href="#">
+          <span class="criminal-alert-name">رضا محمدی</span>
+          <span class="criminal-alert-meta">رسته عملیاتی · کد ملی ۰۹۸۷۶۵۴۳۲۱</span>
+          <span class="criminal-alert-date">صدور ۱۴۰۴/۰۸/۱۵ · انقضا ۱۴۰۵/۰۲/۱۵</span>
+          <span class="criminal-alert-days criminal-alert-days-warning">۱۵ روز مانده</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function(){
+  const head = document.getElementById('criminalAlertsHead');
+  const body = document.getElementById('criminalAlertsBody');
+  if (!head || !body) return;
+  function toggle() {
+    const open = body.hidden;
+    body.hidden = !open;
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    head.classList.toggle('is-open', open);
+  }
+  head.addEventListener('click', toggle);
+  head.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+  });
+})();
+</script>
+
+</body>
+</html>

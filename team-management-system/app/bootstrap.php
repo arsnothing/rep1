@@ -145,32 +145,214 @@ function block_if_dismissed(?array $person, string $action='این عملیات'
 }
 
 /** وضعیت سلامت عنصر (پاپ‌آپ فرم عنصر). دو حالت آخر توضیح تکمیلی می‌گیرند. */
-function health_status_options(): array { return ['healthy'=>'سلامت کامل','mental'=>'سابقه بیماری روحی','physical'=>'سابقه بیماری جسمی']; }
+/** عنوان‌های امور رفاهی */
+function welfare_title_options(): array {
+    return ['trip'=>'سفر','food_package'=>'بسته معیشتی','gift_card'=>'کارت هدیه','cash'=>'واریز نقدی'];
+}
+/** عنوان‌هایی که «نوع یا مبلغ» آن‌ها مبلغ ریالی است (بقیه متن آزاد می‌گیرند). */
+function welfare_is_amount(?string $title): bool { return in_array((string)$title, ['gift_card','cash'], true); }
+/** آیا این عنوان نیاز به شماره شبا دارد؟ */
+function welfare_needs_iban(?string $title): bool { return (string)$title === 'cash'; }
+/** ستون «نوع یا مبلغ» فهرست امور رفاهی */
+function welfare_value_text(?string $title, $amount, ?string $detail): string {
+    if (welfare_is_amount($title)) return ((float)$amount) > 0 ? format_amount($amount) : '—';
+    $detail = trim((string)$detail);
+    return $detail !== '' ? $detail : '—';
+}
+
+function health_status_options(): array { return ['healthy'=>'سلامت کامل','mobility'=>'معلولیت حرکتی','special_disease'=>'بیماری خاص']; }
+/** برچسب وضعیت سلامت؛ مقادیر قدیمی (روحی/جسمی) هم خوانده می‌شوند. */
+function health_status_label(?string $key): string {
+    $key = (string)$key;
+    $legacy = ['mental'=>'سابقه بیماری روحی','physical'=>'سابقه بیماری جسمی'];
+    return health_status_options()[$key] ?? ($legacy[$key] ?? '');
+}
+/** وضعیت‌هایی که توضیح تکمیلی می‌گیرند. */
+function health_status_needs_note(?string $key): bool {
+    return in_array((string)$key, ['mobility','special_disease','mental','physical'], true);
+}
 /** انواع گواهینامه رانندگی */
 function license_type_options(): array { return ['motorcycle'=>'موتور سیکلت','grade3'=>'پایه سوم','grade2'=>'پایه دوم','grade1'=>'پایه یکم','special'=>'ویژه']; }
 /** سطح تسلط رانندگی */
 function license_level_options(): array { return ['low'=>'کم','medium'=>'متوسط','high'=>'زیاد']; }
-/** زبان‌های خارجی (پرکاربرد + خاورمیانه) — برای فیلد چندانتخابی زبان‌های خارجی پرونده عنصر
- *  توجه: فارسی ('fa') عمداً از این لیست حذف شده، چون زبان مادری سیستم است و جزء زبان‌های خارجی حساب نمی‌شود. */
-function language_options(): array {
+/** ستون‌های تکمیلی پرونده عنصر که ممکن است روی دیتابیس قدیمی نباشند. */
+/**
+ * سطح تسلط گواهینامه برای هر نوع جداگانه ذخیره می‌شود: "motorcycle:high,grade2:low".
+ * قالب قدیمی (یک سطح برای همه، مثل "high") هم خوانده می‌شود.
+ */
+function license_levels_decode(?string $raw, array $types = []): array {
+    $raw = trim((string)$raw);
+    $levels = license_level_options();
+    $map = [];
+    if ($raw === '') return $map;
+    if (!str_contains($raw, ':')) {                       // قالب قدیمی
+        if (isset($levels[$raw])) { foreach ($types as $t) $map[$t] = $raw; }
+        return $map;
+    }
+    foreach (explode(',', $raw) as $part) {
+        $part = trim($part);
+        if ($part === '' || !str_contains($part, ':')) continue;
+        [$k, $v] = array_map('trim', explode(':', $part, 2));
+        if ($k !== '' && isset($levels[$v])) $map[$k] = $v;
+    }
+    return $map;
+}
+
+/** آرایهٔ نوع=>سطح را به رشتهٔ ذخیره‌شدنی تبدیل می‌کند. */
+function license_levels_encode(array $map): string {
+    $out = [];
+    foreach ($map as $k => $v) { if ($k !== '' && $v !== '') $out[] = $k.':'.$v; }
+    return implode(',', $out);
+}
+
+/** متن خوانا برای نمایش وضعیت گواهینامه: «موتور سیکلت (زیاد)، ویژه — پهپاد (کم)» */
+function license_summary(?string $typesRaw, ?string $levelsRaw, ?string $specialTitle = ''): string {
+    $typeLabels  = license_type_options();
+    $levelLabels = license_level_options();
+    $types = array_values(array_filter(array_map('trim', explode(',', (string)$typesRaw))));
+    if (!$types) return '';
+    $map = license_levels_decode($levelsRaw, $types);
+    $parts = [];
+    foreach ($types as $t) {
+        $label = $typeLabels[$t] ?? $t;
+        if ($t === 'special' && trim((string)$specialTitle) !== '') $label .= ' — '.trim((string)$specialTitle);
+        if (isset($map[$t])) $label .= ' ('.$levelLabels[$map[$t]].')';
+        $parts[] = $label;
+    }
+    return implode('، ', $parts);
+}
+
+/** آیا ستون موردنظر روی جدول personnel وجود دارد؟ (یک‌بار خوانده و کش می‌شود) */
+function personnel_has_column(string $column): bool {
+    global $pdo;
+    static $cols = null;
+    if ($cols === null) {
+        $cols = [];
+        try { foreach ($pdo->query('SHOW COLUMNS FROM personnel') as $c) { $cols[strtolower((string)$c['Field'])] = true; } }
+        catch (Throwable $e) { $cols = []; }
+    }
+    return isset($cols[strtolower($column)]);
+}
+
+/**
+ * کادر جستجو و دکمه‌اش یک کنترل واحدند: ذره‌بین سمت چپ خودِ کادر، جستجو را اجرا می‌کند.
+ */
+function search_box_html(string $value = '', string $placeholder = '', string $name = 'q', string $extraClass = ''): string {
+    $placeholder = $placeholder !== '' ? $placeholder : personnel_search_placeholder();
+    $cls = trim('search-box '.$extraClass);
+    return '<div class="'.e($cls).'">'
+         . '<input type="search" name="'.e($name).'" class="filter-control filter-search" '
+         . 'placeholder="'.e($placeholder).'" value="'.e($value).'" aria-label="جستجو" autocomplete="off">'
+         . '<button type="submit" class="search-box-btn" aria-label="جستجو" title="جستجو">'
+         . '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.4"></circle><line x1="16" y1="16" x2="21" y2="21"></line></svg>'
+         . '</button></div>';
+}
+
+/** متن کادر جستجوی عناصر — در همهٔ صفحه‌های مرتبط با فهرست عناصر یکسان است. */
+function personnel_search_placeholder(): string { return 'نام، نام‌خانوادگی، کد ملی، شماره تلفن'; }
+
+/** یکسان‌سازی عبارت جستجو (ارقام فارسی، نیم‌فاصله، ی/ک عربی). */
+function personnel_search_normalize(?string $raw): string {
+    $q = fa_to_en_digits(trim((string)$raw));
+    $q = strtr($q, ["\u{00A0}"=>' ', "\u{200C}"=>' ', "\u{200D}"=>' ', "\u{064A}"=>'ی', "\u{0649}"=>'ی', "\u{0643}"=>'ک']);
+    return (string)preg_replace('/\s+/u', ' ', $q);
+}
+
+/**
+ * نگاشت واژه‌های فارسی به مقدار ذخیره‌شده در دیتابیس.
+ * ترتیب مهم است: عبارت طولانی‌تر باید پیش از زیرمجموعه‌اش بیاید
+ * (مثلاً «کارشناسی ارشد» پیش از «کارشناسی» و «پایه یکم» پیش از «پایه»).
+ */
+function personnel_search_aliases(): array {
     return [
-        // زبان‌های پرکاربرد و رایج جهان
-        'en'=>'انگلیسی','fr'=>'فرانسه','de'=>'آلمانی','es'=>'اسپانیایی','it'=>'ایتالیایی',
-        'pt'=>'پرتغالی','ru'=>'روسی','zh'=>'چینی (ماندارین)','ja'=>'ژاپنی','ko'=>'کره‌ای',
-        'hi'=>'هندی','tr'=>'ترکی استانبولی',
-        // زبان‌های خاورمیانه
-        'ar'=>'عربی','ur'=>'اردو','ku'=>'کردی','ps'=>'پشتو',
-        'he'=>'عبری','az'=>'ترکی آذربایجانی','tk'=>'ترکمنی',
+        // گواهینامه — نوع
+        'گواهینامه پایه یکم'=>'grade1','گواهینامه پایه یک'=>'grade1','گواهینامه پایه 1'=>'grade1',
+        'گواهینامه پایه سه'=>'grade3','گواهینامه پایه 3'=>'grade3',
+        'گواهینامه پایه دو'=>'grade2','گواهینامه پایه 2'=>'grade2',
+        'پایه یکم'=>'grade1','پایه یک'=>'grade1','پایه 1'=>'grade1',
+        'پایه سه'=>'grade3','پایه 3'=>'grade3','پایه دو'=>'grade2','پایه 2'=>'grade2',
+        'موتور سیکلت'=>'motorcycle','موتور'=>'motorcycle','ویژه'=>'special',
+        // تحصیلات
+        'کارشناسی ارشد'=>'master','فوق لیسانس'=>'master','کارشناسی'=>'bachelor','لیسانس'=>'bachelor',
+        'کاردانی'=>'associate','دکتری'=>'phd','دکترا'=>'phd','حوزوی'=>'seminary','سیکل'=>'sekel',
+        'دیپلم'=>'diploma','بی‌سواد'=>'illiterate','بی سواد'=>'illiterate',
+        'در حال تحصیل'=>'student','ترک تحصیل'=>'dropout',
+        // گواهینامه — سطح تسلط
+        'تسلط کم'=>'low','تسلط متوسط'=>'medium','تسلط زیاد'=>'high','کم'=>'low','متوسط'=>'medium','زیاد'=>'high',
+        // زبان خارجی، مهارت ورزشی و حرفه: متن آزادند و در جستجوی متنی بالا پوشش داده می‌شوند.
+        // وضعیت سلامت
+        'سلامت کامل'=>'healthy','سالم'=>'healthy',
+        'معلولیت حرکتی'=>'mobility','معلولیت'=>'mobility','بیماری خاص'=>'special_disease',
+        // دین / مذهب
+        'اسلام'=>'اسلام','مسلمان'=>'اسلام','شیعه'=>'شیعه','سنی'=>'سنی',
     ];
 }
-/** ستون‌های تکمیلی پرونده عنصر که ممکن است روی دیتابیس قدیمی نباشند. */
+
+/**
+ * شرط WHERE جستجوی هوشمند عناصر: افزون بر نام/کد ملی/موبایل، واژه‌هایی مثل
+ * «دیپلم»، «پایه دو»، «انگلیسی» یا «شیعه» هم در فیلدهای ساخت‌یافته جستجو می‌شوند.
+ * خروجی: [شرط SQL یا رشتهٔ خالی، آرایهٔ پارامترها]
+ */
+function personnel_search_clause(string $q, string $alias = 'p'): array {
+    $q = personnel_search_normalize($q);
+    if ($q === '') return ['', []];
+
+    $a = $alias;
+    $qSql = strtr($q, ['ی'=>'ي', 'ک'=>'ك']);
+    $like = '%'.$q.'%'; $likeSql = '%'.$qSql.'%';
+
+    $clauses = []; $params = [];
+
+    // الف) جستجوی متنی عمومی (همیشه)
+    $text = "(REPLACE(REPLACE(CONCAT_WS(' ', TRIM({$a}.first_name), TRIM({$a}.last_name)), 'ي', 'ی'), 'ك', 'ک') LIKE ?
+        OR REPLACE(REPLACE(CONCAT_WS(' ', TRIM({$a}.first_name), TRIM({$a}.last_name)), 'ی', 'ي'), 'ک', 'ك') LIKE ?
+        OR {$a}.first_name LIKE ? OR {$a}.last_name LIKE ?
+        OR {$a}.national_id LIKE ? OR {$a}.mobile LIKE ?";
+    array_push($params, $like, $likeSql, $like, $like, $like, $like);
+    if (personnel_has_column('alias_name'))  { $text .= " OR {$a}.alias_name LIKE ?";  $params[] = $like; }
+    if (personnel_has_column('father_name')) { $text .= " OR {$a}.father_name LIKE ?"; $params[] = $likeSql; }
+    foreach (['languages','sport_skill','profession'] as $freeCol) {
+        if (personnel_has_column($freeCol)) { $text .= " OR {$a}.{$freeCol} LIKE ?"; $params[] = $like; }
+    }
+    $clauses[] = $text.')';
+
+    // ب) جستجوی ساخت‌یافته بر اساس نگاشت واژه‌ها
+    $qNorm = trim(strtr($q, ['ي'=>'ی', 'ك'=>'ک']));
+    $matched = null;
+    foreach (personnel_search_aliases() as $word => $value) {
+        if (mb_stripos($qNorm, $word) !== false) { $matched = $value; break; }
+    }
+    if ($matched !== null) {
+        if (in_array($matched, ['illiterate','sekel','diploma','associate','bachelor','master','phd','seminary','student','dropout'], true)) {
+            $clauses[] = "{$a}.education_status = ?"; $params[] = $matched;
+        }
+        if (in_array($matched, ['motorcycle','grade3','grade2','grade1','special'], true) && personnel_has_column('license_types')) {
+            $clauses[] = "FIND_IN_SET(?, {$a}.license_types)"; $params[] = $matched;
+        }
+        if (in_array($matched, ['low','medium','high'], true) && personnel_has_column('license_level')) {
+            // هم قالب قدیمی («high») و هم قالب جدید («grade2:high») پشتیبانی می‌شود
+            $clauses[] = "({$a}.license_level = ? OR {$a}.license_level LIKE ?)";
+            array_push($params, $matched, '%:'.$matched.'%');
+        }
+        if (in_array($matched, ['healthy','mobility','special_disease'], true) && personnel_has_column('health_status')) {
+            $clauses[] = "{$a}.health_status = ?"; $params[] = $matched;
+        }
+        if (in_array($matched, ['اسلام','شیعه','سنی'], true) && personnel_has_column('religion')) {
+            $clauses[] = "({$a}.religion LIKE ? OR {$a}.denomination LIKE ?)";
+            array_push($params, '%'.$matched.'%', '%'.$matched.'%');
+        }
+    }
+
+    return ['('.implode(' OR ', $clauses).')', $params];
+}
+
 function personnel_extra_columns(): array {
     global $pdo;
     static $cols = null;
     if ($cols !== null) return $cols;
     $wanted = ['alias_name','religion','denomination','health_status','health_note','license_types','license_level',
-               'landline_phone','referrer_first_name','referrer_last_name','referrer_national_id','referrer_mobile','languages',
-               'criminal_record_issue_date','sport_skill','postal_code','job_title'];
+               'license_special_title','landline_phone','referrer_first_name','referrer_last_name','referrer_national_id',
+               'referrer_mobile','languages','criminal_record_issue_date','professional_skills','membership_history'];
     $cols = [];
     try {
         foreach ($pdo->query('SHOW COLUMNS FROM personnel') as $c) {
@@ -180,7 +362,7 @@ function personnel_extra_columns(): array {
     } catch (Throwable $e) { $cols = []; }
     return $cols;
 }
-function document_type_options(): array { return ['birth_certificate'=>'شناسنامه','national_card'=>'کارت ملی','criminal_record'=>'گواهی سوء پیشینه','education_certificate'=>'مدرک تحصیلی','driving_license'=>'گواهینامه','personal_form'=>'فرم اطلاعات فردی','dismissal'=>'سند برکناری','other'=>'سایر']; }
+function document_type_options(): array { return ['birth_certificate'=>'شناسنامه','national_card'=>'کارت ملی','criminal_record'=>'گواهی سوء پیشینه','education_certificate'=>'مدرک تحصیلی','driving_license'=>'گواهینامه','personal_form'=>'فرم اطلاعات فردی','dismissal'=>'برگه برکناری','encouragement'=>'برگه تشویق','reprimand'=>'برگه توبیخ','other'=>'سایر']; }
 /**
  * تبدیل صفحهٔ اول یک PDF به تصویر PNG (برای قالب گواهی).
  * به‌ترتیب از Imagick، Ghostscript و pdftoppm استفاده می‌کند؛
@@ -467,59 +649,6 @@ function jalali_display(?string $date): string {
     if ($v === '') return '—';
     [$y, $m, $d] = explode('/', $v);
     return fa_digits($y).'/'.fa_digits($m).'/'.fa_digits($d);
-}
-
-/**
- * افرادی که گواهی سوء پیشینه آن‌ها منقضی شده یا نزدیک به انقضا است.
- * مبنا: ستون personnel.criminal_record_issue_date + ۶ ماه = تاریخ انقضا.
- * - 'expired': تاریخ انقضا گذشته است.
- * - 'warning': کمتر از ۳۰ روز تا انقضا مانده است.
- * فقط افراد فعال (غیر برکنارشده) بررسی می‌شوند.
- *
- * @return array<int,array{personnel_id:int,full_name:string,national_id:string,unit:string,issue_date:string,expiry_date:string,days_left:int,status:string}>
- */
-function criminal_record_expiring_personnel(int $warningDays = 30, int $validityMonths = 6): array {
-    global $pdo;
-    static $cache = null;
-    $cacheKey = $warningDays.'-'.$validityMonths;
-    if (is_array($cache) && isset($cache[$cacheKey])) return $cache[$cacheKey];
-
-    $out = [];
-    try {
-        $hasCol = (bool)$pdo->query("SHOW COLUMNS FROM personnel LIKE 'criminal_record_issue_date'")->fetch();
-        if (!$hasCol) return $cache[$cacheKey] = $out;
-
-        // criminal_record_issue_date + 6 ماه = تاریخ انقضا
-        $expiryExpr = "DATE_ADD(p.criminal_record_issue_date, INTERVAL $validityMonths MONTH)";
-        $sql = "SELECT p.id, p.first_name, p.last_name, p.national_id, p.criminal_record_issue_date,
-                       ct.category_key AS unit, ct.category_name AS unit_label,
-                       $expiryExpr AS expiry_date,
-                       DATEDIFF($expiryExpr, CURDATE()) AS days_left
-                FROM personnel p
-                JOIN category_types ct ON ct.id=p.category_type_id
-                WHERE p.personnel_status <> 'dismissed'
-                  AND p.criminal_record_issue_date IS NOT NULL
-                  AND $expiryExpr <= DATE_ADD(CURDATE(), INTERVAL $warningDays DAY)
-                ORDER BY days_left ASC, p.last_name, p.first_name";
-        $st = $pdo->prepare($sql);
-        $st->execute();
-        foreach ($st->fetchAll() as $row) {
-            $days = (int)$row['days_left'];
-            $out[] = [
-                'personnel_id' => (int)$row['id'],
-                'full_name'    => trim($row['first_name'].' '.$row['last_name']),
-                'national_id'  => (string)$row['national_id'],
-                'unit'         => (string)$row['unit_label'],
-                'issue_date'   => (string)$row['criminal_record_issue_date'],
-                'expiry_date'  => (string)$row['expiry_date'],
-                'days_left'    => $days,
-                'status'       => $days < 0 ? 'expired' : 'warning',
-            ];
-        }
-    } catch (Throwable $e) {
-        error_log('[criminal_record_expiring] '.$e->getMessage());
-    }
-    return $cache[$cacheKey] = $out;
 }
 
 /**

@@ -45,32 +45,35 @@
         }).join('') : '<div class="cert-empty">سندی برای این دوره ثبت نشده است.</div>';
       }
 
-      // برچسب «نوع تشویق / نوع اخطار / نوع توبیخ» از عنوان همان پنل ساخته می‌شود.
-      var title = btn.dataset.discTitle;
-      if (title) {
+      // برچسب «نحوه تشویق / نحوه تذکر / نحوه توبیخ»
+      var shortLabel = btn.dataset.discShort;
+      if (shortLabel) {
         var label = modal.querySelector('[data-disc-subject-label]');
-        if (label) label.textContent = 'نوع ' + title;
+        if (label) label.textContent = 'نحوه ' + shortLabel;
         var input = modal.querySelector('[data-disc-subject-input]');
-        if (input) input.placeholder = 'نوع ' + title + ' را وارد کنید';
+        if (input) input.placeholder = 'نحوه ' + shortLabel + ' را وارد کنید';
       }
-
-      // کارت آپلود برگهٔ سند: فقط برای انواعی که data-disc-doc="1" دارند نمایش داده می‌شود
-      // (تشویق، توبیخ، و از این پس تذکر هم).
+      // برچسب «تشویق‌کننده / تذکر دهنده / توبیخ‌کننده»
+      var issuerLabel = btn.dataset.discIssuer;
+      if (issuerLabel) {
+        var iLabel = modal.querySelector('[data-disc-issuer-label]');
+        if (iLabel) iLabel.textContent = issuerLabel;
+        var iInput = modal.querySelector('[data-disc-issuer-input]');
+        if (iInput) iInput.placeholder = issuerLabel + ' را وارد کنید';
+      }
+      // کارت برگه سند: فقط برای تشویق/توبیخ نمایش داده و اجباری می‌شود؛ تذکر برگه ندارد.
       var docCard = modal.querySelector('[data-disc-doc-card]');
       if (docCard) {
-        var showDoc = btn.dataset.discDoc === '1';
-        docCard.hidden = !showDoc;
-        var fileInput = docCard.querySelector('input[type=file]');
-        if (fileInput) {
-          if (showDoc) {
-            fileInput.setAttribute('required', 'required');
-          } else {
-            fileInput.removeAttribute('required');
-          }
-        }
-        var docLabel = modal.querySelector('[data-disc-doc-label]');
-        if (docLabel) {
-          docLabel.textContent = btn.dataset.discDocTitle || 'برگه سند';
+        var hasDoc = btn.dataset.discDoc === '1';
+        var docInput = docCard.querySelector('input[type=file]');
+        docCard.hidden = !hasDoc;
+        var docLabel = docCard.querySelector('[data-disc-doc-label]');
+        if (hasDoc) {
+          if (docLabel) docLabel.textContent = btn.dataset.discDocTitle || 'برگه سند';
+          if (docInput) docInput.required = true;
+        } else if (docInput) {
+          docInput.required = false;
+          docInput.value = '';
         }
       }
 

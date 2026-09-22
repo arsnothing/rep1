@@ -60,11 +60,13 @@ if($selectedProvince){
 }
 
 $values=$row ?: [
- 'first_name'=>'','last_name'=>'','national_id'=>'','father_name'=>'','birth_date'=>'','marital_status'=>'','education_status'=>'','mobile'=>'','emergency_phone'=>'','residence_address'=>'','postal_code'=>'',
+ 'first_name'=>'','last_name'=>'','national_id'=>'','father_name'=>'','birth_date'=>'','marital_status'=>'','education_status'=>'','mobile'=>'','emergency_phone'=>'','residence_address'=>'',
  'organizational_code'=>'','secondary_job'=>'','secondary_job_address'=>'','iban'=>'','profile_photo_path'=>'',
  'unit'=>'','unit_number'=>'1','group_no'=>'','team_no'=>'','position_type'=>'','personnel_status'=>'active','province_id'=>'','city_id'=>'','district_id'=>'','commander_number'=>'',
- 'alias_name'=>'','religion'=>'','denomination'=>'','health_status'=>'','health_note'=>'','license_types'=>'','license_level'=>'','landline_phone'=>'','sport_skill'=>'','job_title'=>'',
+ 'alias_name'=>'','religion'=>'','denomination'=>'','health_status'=>'','health_note'=>'','license_types'=>'','license_level'=>'','license_special_title'=>'','landline_phone'=>'',
  'referrer_first_name'=>'','referrer_last_name'=>'','referrer_national_id'=>'','referrer_mobile'=>'','languages'=>'',
+ 'professional_skills'=>'','membership_history'=>'',
+ 'criminal_record_issue_date'=>'',
 ];
 $error='';
 /** در صورت خطا: تراکنش برگردانده و فایل‌های منتقل‌شده پاک می‌شوند تا رکورد یا فایل نیمه‌کاره نماند. */
@@ -90,39 +92,40 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $values['group_no']=($values['group_no']!=='')?$values['group_no']:'1';
     // ---- فیلدهای تکمیلی اطلاعات فردی و معرف ----
     $values['landline_phone']=digits_only($_POST['landline_phone']??'');
-    $values['referrer_national_id']=digits_only($_POST['referrer_national_id']??'');
     $values['referrer_mobile']=digits_only($_POST['referrer_mobile']??'');
-    $values['postal_code']=digits_only($_POST['postal_code']??'');
-    $values['sport_skill']=trim((string)($_POST['sport_skill']??''));
-    $values['job_title']=trim((string)($_POST['job_title']??''));
     $healthStatus=(string)($_POST['health_status']??'');
     if(!isset(health_status_options()[$healthStatus])) $healthStatus='';
     $values['health_status']=$healthStatus;
-    $values['health_note']=$healthStatus==='healthy' ? '' : trim((string)($_POST['health_note']??''));
+    $values['health_note']=health_status_needs_note($healthStatus) ? trim((string)($_POST['health_note']??'')) : '';
     $licenseTypes=array_values(array_intersect((array)($_POST['license_types']??[]), array_keys(license_type_options())));
     $values['license_types']=implode(',', $licenseTypes);
-    $licenseLevel=(string)($_POST['license_level']??'');
-    if(!$licenseTypes || !isset(license_level_options()[$licenseLevel])) $licenseLevel=$licenseTypes?$licenseLevel:'';
-    $values['license_level']=isset(license_level_options()[$licenseLevel])?$licenseLevel:'';
-    $languages=array_values(array_intersect((array)($_POST['languages']??[]), array_keys(language_options())));
-    $values['languages']=implode(',', $languages);
-
-    $requiredFields=[
-      'first_name'=>'نام','last_name'=>'نام خانوادگی','national_id'=>'کد ملی','father_name'=>'نام پدر',
-      'alias_name'=>'شهرت','religion'=>'دین','denomination'=>'مذهب',
-      'marital_status'=>'وضعیت تأهل','education_status'=>'تحصیلات','mobile'=>'شماره تماس همراه',
-      'emergency_phone'=>'شماره تماس اضطراری','residence_address'=>'آدرس محل سکونت',
-      'postal_code'=>'کد پستی محل سکونت',
-      'referrer_first_name'=>'نام معرف','referrer_last_name'=>'نام خانوادگی معرف',
-      'referrer_national_id'=>'کد ملی معرف','referrer_mobile'=>'شماره تماس همراه معرف',
-      'secondary_job_address'=>'آدرس محل کار','job_title'=>'عنوان شغلی',
-      'organizational_code'=>'کد سازمانی','commander_number'=>'شماره قائد',
-      'position_type'=>'سمت','unit'=>'رسته','unit_number'=>'شماره دسته',
-    ];
+    // سطح تسلط برای هر نوع جداگانه: «motorcycle:high,grade2:low»
+    $levelMap=license_levels_decode((string)($_POST['license_level']??''), $licenseTypes);
+    $levelMap=array_intersect_key($levelMap, array_flip($licenseTypes));
+    $values['license_level']=license_levels_encode($levelMap);
+    $values['license_special_title']=in_array('special',$licenseTypes,true)
+        ? mb_substr(trim((string)($_POST['license_special_title']??'')),0,120) : '';
+    $values['languages']=mb_substr(trim((string)($_POST['languages']??'')),0,255);
+    // حرفه و مهارت (آرایهٔ اینپوت‌ها) - ذخیره به صورت JSON برای سادگی در کوئری و نمایش
+    $skillsRaw=(array)($_POST['professional_skills']??[]);
+    $cleanedSkills=[];
+    foreach($skillsRaw as $sk){
+        $sk=mb_substr(trim((string)$sk),0,150);
+        if($sk!=='') $cleanedSkills[]=$sk;
+    }
+    $values['professional_skills']=$cleanedSkills ? json_encode($cleanedSkills,JSON_UNESCAPED_UNICODE) : '';
+    // سابقه عضویت - CSV از کلیدهای انتخاب‌شده
+    $membershipRaw=(array)($_POST['membership_history']??[]);
+    $validMemberships=['faraja'=>'فراجا','army'=>'ارتش','sepah'=>'سپاه','volunteer_police'=>'پلیس افتخاری'];
+    $cleanedMembership=[];
+    foreach($membershipRaw as $mk){
+        $mk=(string)$mk;
+        if(isset($validMemberships[$mk])) $cleanedMembership[]=$mk;
+    }
+    $values['membership_history']=implode(',', $cleanedMembership);
     foreach($requiredFields as $field=>$label){
       if(trim((string)($values[$field]??''))===''){ $error='«'.$label.'» را تکمیل کنید.'; break; }
     }
-    if(!$error && trim((string)($_POST['birth_date_jalali']??''))==='') $error='«تاریخ تولد» را تکمیل کنید.';
     if(!$error && trim((string)($values['iban']??''))==='') $error='«شماره شبا» را تکمیل کنید.';
     if(!$error && !valid_name_text($values['first_name'])) $error='نام نباید شامل عدد باشد.';
     if(!$error && !valid_name_text($values['last_name'])) $error='نام خانوادگی نباید شامل عدد باشد.';
@@ -131,18 +134,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!$error && !valid_digits($values['mobile'],10,15)) $error='شماره اصلی فقط باید شامل اعداد باشد.';
     if(!$error && $values['emergency_phone']!=='' && !valid_digits($values['emergency_phone'],10,15)) $error='شماره تماس اضطراری نامعتبر است.';
     if(!$error && $values['landline_phone']!=='' && !valid_digits($values['landline_phone'],8,15)) $error='شماره تماس ثابت نامعتبر است.';
-    if(!$error && !valid_digits($values['postal_code']??'',5,10)) $error='کد پستی باید ۵ تا ۱۰ رقم باشد.';
     if(!$error && trim((string)$values['alias_name'])!=='' && !valid_name_text($values['alias_name'])) $error='شهرت نباید شامل عدد باشد.';
-    if(!$error && $values['referrer_national_id']!=='' && !valid_digits($values['referrer_national_id'],10,10)) $error='کد ملی معرف باید ۱۰ رقم باشد.';
     if(!$error && $values['referrer_mobile']!=='' && !valid_digits($values['referrer_mobile'],10,15)) $error='شماره تماس معرف نامعتبر است.';
-    if(!$error && $values['health_status']==='') $error='«وضعیت سلامت» را انتخاب کنید.';
-    if(!$error && in_array($values['health_status'],['mental','physical'],true) && $values['health_note']==='') $error='توضیح وضعیت سلامت را وارد کنید.';
-    if(!$error && $values['license_types']!=='' && $values['license_level']==='') $error='سطح تسلط گواهینامه را انتخاب کنید.';
+    if(!$error && health_status_needs_note($values['health_status']) && $values['health_note']==='') $error='توضیح وضعیت سلامت را وارد کنید.';
     if(!$error && $values['license_types']==='' && $values['license_level']!=='') $error='نوع گواهینامه را انتخاب کنید.';
+    if(!$error && $licenseTypes){
+        foreach($licenseTypes as $lt){
+            if(empty($levelMap[$lt])){ $error='سطح تسلط «'.(license_type_options()[$lt]??$lt).'» را انتخاب کنید.'; break; }
+        }
+    }
+    if(!$error && in_array('special',$licenseTypes,true) && $values['license_special_title']==='') $error='عنوان گواهینامه ویژه را وارد کنید.';
     if(!$error && $values['organizational_code']!=='' && !valid_digits($values['organizational_code'],1,30)) $error='کد سازمانی نامعتبر است.';
-    if(!$error && trim((string)$values['secondary_job'])!=='' && !valid_name_text($values['secondary_job'])) $error='حرفه و تخصص نباید شامل عدد باشد.';
-    if(!$error && trim((string)($values['job_title']??''))!=='' && !valid_name_text($values['job_title'])) $error='عنوان شغلی نباید شامل عدد باشد.';
-    if(!$error && trim((string)($values['sport_skill']??''))!=='' && digits_only($values['sport_skill'])===$values['sport_skill'] && $values['sport_skill']!=='') $error='مهارت ورزشی نباید فقط شامل عدد باشد.';
+    if(!$error && trim((string)$values['secondary_job'])!=='' && !valid_name_text($values['secondary_job'])) $error='عنوان شغل نباید شامل عدد باشد.';
     if(!$error && $values['iban']!=='' && !valid_iban_local($values['iban'])) $error='شماره شبا باید شامل IR و ۲۴ رقم باشد.';
     if(!$error && !array_key_exists((string)$values['unit'],$categoryLabels)) $error='رسته نامعتبر است.';
     if(!$error && !array_key_exists((string)$values['position_type'],$positionLabels)) $error='سمت نامعتبر است.';
@@ -153,6 +156,24 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
     $birthGregorian=parse_jalali_input($_POST['birth_date_jalali']??'');
     if(!$error && trim((string)($_POST['birth_date_jalali']??''))!=='' && $birthGregorian===null) $error='تاریخ تولد صحیح نیست.';
+
+    /* جایگاه سازمانی اجباری نیست؛ فیلدهای خالی با مقدار پیش‌فرض پر می‌شوند
+       چون ستون‌های متناظرشان در دیتابیس NOT NULL هستند. */
+    if(!$error){
+        $allowedUnits=allowed_units();
+        if(trim((string)($values['unit']??''))==='') $values['unit']=$allowedUnits[0] ?? 'information';
+        if(trim((string)($values['unit_number']??''))==='') $values['unit_number']='1';
+        if(trim((string)($values['position_type']??''))==='') $values['position_type']='element';
+        if(trim((string)($values['group_no']??''))==='') $values['group_no']='1';
+        if(trim((string)($values['team_no']??''))==='') $values['team_no']='1';
+        if(!$values['province_id']){
+            try { $values['province_id']=(int)$pdo->query("SELECT id FROM provinces WHERE is_active=1 AND province_code='TEH' ORDER BY id LIMIT 1")->fetchColumn(); }
+            catch (Throwable $e) { $values['province_id']=0; }
+            if(!$values['province_id']){
+                try { $values['province_id']=(int)$pdo->query("SELECT id FROM provinces WHERE is_active=1 ORDER BY id LIMIT 1")->fetchColumn(); } catch (Throwable $e) {}
+            }
+        }
+    }
 
     $categoryTypeId=$category_number_id=$positionId=$groupId=$teamId=$cityProvinceId=null;
     if(!$error){
@@ -178,8 +199,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             catch (Throwable $e) { $values['district_id']=0; }
         }
 
-        if(!$error && !in_array((string)$values['position_type'],['unit_commander'],true) && trim((string)($_POST['group_no']??''))==='') $error='«گروه» را انتخاب کنید.';
-        if(!$error && !in_array((string)$values['position_type'],['unit_commander','group_commander'],true) && trim((string)($values['team_no']??''))==='') $error='«تیم» را انتخاب کنید.';
         if(!$error && in_array((string)$values['position_type'],['unit_commander','group_commander'],true)) $teamId=null; else $teamId=team_id((string)$values['unit'],(int)$values['team_no']);
         if(!$error && $values['position_type']==='unit_commander'){ $groupId=null; $teamId=null; }
         elseif(!$error && $values['position_type']==='group_commander'){ $teamId=null; }
@@ -258,79 +277,107 @@ require __DIR__.'/../app/partials/header.php'; ?>
 <form method="post" enctype="multipart/form-data" class="panel form-grid" id="personnelForm">
 <input type="hidden" name="csrf" value="<?=e(csrf_token())?>">
 
-<div class="section-title wide">اطلاعات فردی فیزیک</div>
-<?php
-  $languageOptions=language_options();
-  $currentLanguages=array_values(array_filter(explode(',', (string)($values['languages']??'')), fn($x)=>isset($languageOptions[$x])));
-  $languagesLabel = $currentLanguages
-      ? implode('، ', array_map(fn($k)=>$languageOptions[$k]??$k, $currentLanguages))
-      : 'انتخاب زبان‌های خارجی';
-
-  $healthOptions=health_status_options(); $licenseTypeOptions=license_type_options(); $licenseLevelOptions=license_level_options();
-  $currentHealth=(string)($values['health_status']??'');
-  $currentLicenseTypes=array_filter(explode(',', (string)($values['license_types']??'')));
-  $currentLicenseLevel=(string)($values['license_level']??'');
-  $healthLabel = $currentHealth!=='' ? ($healthOptions[$currentHealth].($values['health_note']!==''?' — '.$values['health_note']:'')) : 'انتخاب وضعیت سلامت';
-  $licenseLabel = $currentLicenseTypes
-      ? implode('، ', array_map(fn($k)=>$licenseTypeOptions[$k]??$k, $currentLicenseTypes)).($currentLicenseLevel?' — تسلط '.$licenseLevelOptions[$currentLicenseLevel]:'')
-      : 'انتخاب وضعیت گواهینامه';
-?>
+<div class="section-title wide">اطلاعات فردی</div>
 <label><span class="lbl">نام</span><input name="first_name" required value="<?=e($values['first_name']??'')?>"></label>
 <label><span class="lbl">نام خانوادگی</span><input name="last_name" required value="<?=e($values['last_name']??'')?>"></label>
 <label><span class="lbl">کد ملی</span><input name="national_id" required inputmode="numeric" maxlength="10" value="<?=e($values['national_id']??'')?>"></label>
-<label><span class="lbl">نام پدر</span><input name="father_name" required value="<?=e($values['father_name']??'')?>"></label>
-<label><span class="lbl">شهرت</span><input name="alias_name" required value="<?=e($values['alias_name']??'')?>"></label>
-<label><span class="lbl">تاریخ تولد</span><input name="birth_date_jalali" required class="jalali" maxlength="10" inputmode="numeric" autocomplete="off" value="<?=e($birthJalali)?>"></label>
-<label><span class="lbl">دین</span><input name="religion" required value="<?=e($values['religion']??'')?>"></label>
-<label><span class="lbl">مذهب</span><input name="denomination" required value="<?=e($values['denomination']??'')?>"></label>
-<label><span class="lbl">تحصیلات</span><select name="education_status" required><option value="" disabled hidden <?=($values['education_status']??'')===''?'selected':''?>>انتخاب تحصیلات</option><?php foreach($eduLabels as $k=>$v):?><option value="<?=$k?>" <?=($values['education_status']??'')===$k?'selected':''?>><?=$v?></option><?php endforeach;?></select></label>
-<label><span class="lbl">وضعیت تأهل</span><select name="marital_status" required><option value="" disabled hidden <?=($values['marital_status']??'')===''?'selected':''?>>انتخاب وضعیت تأهل</option><option value="single" <?=($values['marital_status']??'')==='single'?'selected':''?>>مجرد</option><option value="married" <?=($values['marital_status']??'')==='married'?'selected':''?>>متأهل</option><option value="separated" <?=($values['marital_status']??'')==='separated'?'selected':''?>>متارکه</option></select></label>
+<label><span class="lbl">نام پدر</span><input name="father_name" value="<?=e($values['father_name']??'')?>"></label>
+<label><span class="lbl">شهرت</span><input name="alias_name" value="<?=e($values['alias_name']??'')?>"></label>
+<label><span class="lbl">تاریخ تولد</span><input name="birth_date_jalali" class="jalali" maxlength="10" inputmode="numeric" autocomplete="off" value="<?=e($birthJalali)?>"></label>
+<label><span class="lbl">دین</span><input name="religion" value="<?=e($values['religion']??'')?>"></label>
+<label><span class="lbl">مذهب</span><input name="denomination" value="<?=e($values['denomination']??'')?>"></label>
+<?php
+  /* پاپ‌آپ تحصیلات - انتخاب از لیست + امکان توضیح متنی آزاد */
+  $currentEducation=(string)($values['education_status']??'');
+  $educationLabel = $currentEducation!=='' ? ($eduLabels[$currentEducation]??$currentEducation) : 'انتخاب تحصیلات';
+?>
+<label class="picker-field"><span class="lbl">تحصیلات</span>
+  <button type="button" class="picker-trigger<?= $currentEducation!==''?' has-value':'' ?>" data-pv-open="educationModal" id="educationTrigger"><span data-education-label><?=e($educationLabel)?></span><span class="picker-arrow">⌄</span></button>
+  <input type="hidden" name="education_status" id="educationStatusInput" value="<?=e($currentEducation)?>" required>
+</label>
+<label><span class="lbl">وضعیت تأهل</span><select name="marital_status"><option value="" disabled hidden <?=($values['marital_status']??'')===''?'selected':''?>>انتخاب وضعیت تأهل</option><option value="single" <?=($values['marital_status']??'')==='single'?'selected':''?>>مجرد</option><option value="married" <?=($values['marital_status']??'')==='married'?'selected':''?>>متأهل</option><option value="separated" <?=($values['marital_status']??'')==='separated'?'selected':''?>>متارکه</option></select></label>
+
+<?php
+  $healthOptions=health_status_options(); $licenseTypeOptions=license_type_options(); $licenseLevelOptions=license_level_options();
+  $currentHealth=(string)($values['health_status']??'');
+  $currentLicenseTypes=array_filter(explode(',', (string)($values['license_types']??'')));
+  $currentLicenseLevels=license_levels_decode((string)($values['license_level']??''), $currentLicenseTypes);
+  $currentSpecialTitle=(string)($values['license_special_title']??'');
+  $healthLabel = $currentHealth!=='' ? (health_status_label($currentHealth).(($values['health_note']??'')!==''?' — '.$values['health_note']:'')) : 'انتخاب وضعیت سلامت';
+  $licenseLabel = $currentLicenseTypes
+      ? license_summary((string)($values['license_types']??''), (string)($values['license_level']??''), $currentSpecialTitle)
+      : 'انتخاب وضعیت گواهینامه';
+?>
 <label class="picker-field"><span class="lbl">وضعیت سلامت</span>
   <button type="button" class="picker-trigger<?= $currentHealth!==''?' has-value':'' ?>" data-pv-open="healthModal" id="healthTrigger"><span data-health-label><?=e($healthLabel)?></span><span class="picker-arrow">⌄</span></button>
-  <input type="hidden" name="health_status" id="healthStatusInput" value="<?=e($currentHealth)?>" required>
+  <input type="hidden" name="health_status" id="healthStatusInput" value="<?=e($currentHealth)?>">
   <input type="hidden" name="health_note" id="healthNoteInput" value="<?=e($values['health_note']??'')?>">
 </label>
 <label class="picker-field"><span class="lbl">وضعیت گواهینامه</span>
   <button type="button" class="picker-trigger<?= $currentLicenseTypes?' has-value':'' ?>" data-pv-open="licenseModal" id="licenseTrigger"><span data-license-label><?=e($licenseLabel)?></span><span class="picker-arrow">⌄</span></button>
-  <input type="hidden" name="license_level" id="licenseLevelInput" value="<?=e($currentLicenseLevel)?>" required>
+  <input type="hidden" name="license_level" id="licenseLevelInput" value="<?=e(license_levels_encode($currentLicenseLevels))?>">
+  <input type="hidden" name="license_special_title" id="licenseSpecialInput" value="<?=e($currentSpecialTitle)?>">
   <span id="licenseTypesHolder"><?php foreach($currentLicenseTypes as $lt): ?><input type="hidden" name="license_types[]" value="<?=e($lt)?>"><?php endforeach; ?></span>
 </label>
-<label class="picker-field"><span class="lbl">زبان خارجی</span>
-  <button type="button" class="picker-trigger<?= $currentLanguages?' has-value':'' ?>" data-pv-open="languagesModal" id="languagesTrigger"><span data-languages-label><?=e($languagesLabel)?></span><span class="picker-arrow">⌄</span></button>
-  <span id="languagesHolder"><?php foreach($currentLanguages as $lng): ?><input type="hidden" name="languages[]" value="<?=e($lng)?>"><?php endforeach; ?></span>
+
+<label><span class="lbl">زبان خارجی</span><input name="languages" maxlength="255" autocomplete="off" value="<?=e($values['languages']??'')?>"></label>
+
+<?php
+  /* پاپ‌آپ حرفه و مهارت - آرایه‌ای از اینپوت‌ها با دکمهٔ + و - */
+  $currentSkills = [];
+  if (!empty($values['professional_skills'])) {
+      $decoded = json_decode((string)$values['professional_skills'], true);
+      if (is_array($decoded)) $currentSkills = array_values(array_filter(array_map('strval', $decoded), fn($v)=>trim($v)!==''));
+  }
+  $skillsLabel = $currentSkills ? implode('، ', array_slice($currentSkills, 0, 3)).(count($currentSkills)>3?'، …':'') : 'افزودن حرفه و مهارت';
+?>
+<label class="picker-field"><span class="lbl">حرفه و مهارت</span>
+  <button type="button" class="picker-trigger<?= $currentSkills?' has-value':'' ?>" data-pv-open="skillsModal" id="skillsTrigger"><span data-skills-label><?=e($skillsLabel)?></span><span class="picker-arrow">⌄</span></button>
+  <span id="skillsHolder"><?php foreach($currentSkills as $sk): ?><input type="hidden" name="professional_skills[]" value="<?=e($sk)?>"><?php endforeach; ?></span>
 </label>
-<label><span class="lbl">مهارت ورزشی</span><input name="sport_skill" maxlength="150" value="<?=e($values['sport_skill']??'')?>" placeholder="مثلاً شنا، فوتبال، کشتی"></label>
-<label><span class="lbl">حرفه و تخصص</span><input name="secondary_job" value="<?=e($values['secondary_job']??'')?>"></label>
+
+<?php
+  /* پاپ‌آپ سابقه عضویت - چندانتخابی از گزینه‌های fixed */
+  $membershipLabels=['faraja'=>'فراجا','army'=>'ارتش','sepah'=>'سپاه','volunteer_police'=>'پلیس افتخاری'];
+  $currentMembership=array_values(array_filter(explode(',', (string)($values['membership_history']??''))));
+  $currentMembership=array_values(array_intersect($currentMembership, array_keys($membershipLabels)));
+  $membershipLabel = $currentMembership
+      ? implode('، ', array_map(fn($k)=>$membershipLabels[$k]??$k, $currentMembership))
+      : 'انتخاب سابقه عضویت';
+?>
+<label class="picker-field"><span class="lbl">سابقه عضویت</span>
+  <button type="button" class="picker-trigger<?= $currentMembership?' has-value':'' ?>" data-pv-open="membershipModal" id="membershipTrigger"><span data-membership-label><?=e($membershipLabel)?></span><span class="picker-arrow">⌄</span></button>
+  <span id="membershipHolder"><?php foreach($currentMembership as $mk): ?><input type="hidden" name="membership_history[]" value="<?=e($mk)?>"><?php endforeach; ?></span>
+</label>
+
 <label><span class="lbl">شماره تماس ثابت</span><input name="landline_phone" inputmode="numeric" value="<?=e($values['landline_phone']??'')?>"></label>
 <label><span class="lbl">شماره تماس همراه</span><input name="mobile" required inputmode="numeric" value="<?=e($values['mobile']??'')?>"></label>
-<label><span class="lbl">شماره تماس اضطراری</span><input name="emergency_phone" required inputmode="numeric" value="<?=e($values['emergency_phone']??'')?>"></label>
-<label><span class="lbl">کد پستی محل سکونت</span><input name="postal_code" required inputmode="numeric" maxlength="10" value="<?=e($values['postal_code']??'')?>"></label>
-<label class="wide"><span class="lbl">آدرس محل سکونت</span><textarea name="residence_address" required rows="3"><?=e($values['residence_address']??'')?></textarea></label>
+<label><span class="lbl">شماره تماس اضطراری</span><input name="emergency_phone" inputmode="numeric" value="<?=e($values['emergency_phone']??'')?>"></label>
+<label class="wide"><span class="lbl">آدرس محل سکونت</span><textarea name="residence_address" rows="3"><?=e($values['residence_address']??'')?></textarea></label>
 
 <div class="section-title wide">اطلاعات معرف</div>
 <label><span class="lbl">نام</span><input name="referrer_first_name" required value="<?=e($values['referrer_first_name']??'')?>"></label>
 <label><span class="lbl">نام خانوادگی</span><input name="referrer_last_name" required value="<?=e($values['referrer_last_name']??'')?>"></label>
-<label><span class="lbl">کد ملی</span><input name="referrer_national_id" required inputmode="numeric" maxlength="10" value="<?=e($values['referrer_national_id']??'')?>"></label>
 <label><span class="lbl">شماره تماس همراه</span><input name="referrer_mobile" required inputmode="numeric" value="<?=e($values['referrer_mobile']??'')?>"></label>
 
 <div class="section-title wide">اطلاعات شغلی</div>
-<label><span class="lbl">عنوان شغلی</span><input name="job_title" required value="<?=e($values['job_title']??'')?>"></label>
-<label class="wide"><span class="lbl">آدرس محل کار</span><textarea name="secondary_job_address" required rows="3"><?=e($values['secondary_job_address']??'')?></textarea></label>
+<label><span class="lbl">عنوان شغلی</span><input name="secondary_job" value="<?=e($values['secondary_job']??'')?>"></label>
+<label class="wide"><span class="lbl">آدرس محل کار</span><textarea name="secondary_job_address" rows="3"><?=e($values['secondary_job_address']??'')?></textarea></label>
 
 <div class="section-title wide">اطلاعات بانکی</div>
 <label><span class="lbl">شماره شبا</span><div class="iban-input"><span class="iban-prefix">IR</span><input name="iban_digits" required placeholder="حداکثر ۲۴ رقم وارد شود" maxlength="24" inputmode="numeric" value="<?=e(substr((string)($values['iban']??''),2,24))?>"><input type="hidden"  name="iban" value="<?=e($values['iban']??'')?>"></div></label>
 
 <div class="section-title wide">جایگاه سازمانی</div>
 <div class="organization-fields wide">
- <label class="org-solo"><span class="lbl">کد سازمانی</span><input name="organizational_code" required inputmode="numeric" value="<?=e($values['organizational_code']??'')?>"></label>
+ <label class="org-solo"><span class="lbl">کد سازمانی</span><input name="organizational_code" inputmode="numeric" value="<?=e($values['organizational_code']??'')?>"></label>
  <span class="org-line-break" aria-hidden="true"></span>
- <label class="location-field"><span class="lbl">استان محل خدمت</span><div class="smart-select" id="provinceSmart"><button type="button" class="smart-select-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="smart-select-value">انتخاب استان</span><span class="smart-select-arrow">⌄</span></button><div class="smart-select-menu" role="listbox"><div class="smart-select-search-wrap"><input type="search" class="smart-select-search" placeholder="جست‌وجوی استان" autocomplete="off"></div><div class="smart-select-options"></div></div><select name="province_id" id="provinceSelect" class="smart-select-native" required><option value="" disabled hidden <?=empty($values['province_id'])?'selected':''?>>انتخاب استان</option><?php foreach($provinces as $p):?><option value="<?=$p['id']?>" <?=((int)$values['province_id']===(int)$p['id'])?'selected':''?>><?=e($p['province_name'])?></option><?php endforeach;?></select></div></label>
- <label><span class="lbl">شماره قائد</span><input name="commander_number" required inputmode="numeric" maxlength="30" value="<?=e($values['commander_number']??'')?>"></label>
- <label class=""><span class="lbl">سمت</span><select name="position_type" id="positionSelect" required><option value="" disabled hidden <?=($values['position_type']??'')===''?'selected':''?>>انتخاب سمت</option><?php foreach($positionLabels as $k=>$v):?><option value="<?=$k?>" <?=($values['position_type']??'')===$k?'selected':''?>><?=$v?></option><?php endforeach;?></select></label>
- <label><span class="lbl">رسته</span><select name="unit" id="unitSelect" required><option value="" disabled hidden <?=((string)($values['unit']??''))===''?'selected':''?>>انتخاب رسته</option><?php foreach($categoryLabels as $k=>$v):?><option value="<?=e($k)?>" <?=((string)($values['unit']??'')===(string)$k?'selected':'')?>><?=e($v)?></option><?php endforeach;?></select></label>
- <label><span class="lbl">شماره دسته</span><input name="unit_number" inputmode="numeric" value="<?=e($values['unit_number']??'1')?>" required></label>
- <label id="groupField"><span class="lbl">گروه</span><select name="group_no" id="groupSelect" required><option value="" disabled hidden <?=($values['group_no']??'')===''?'selected':''?>>انتخاب گروه</option><option value="1" <?=((int)($values['group_no']??0)===1?'selected':'')?>>گروه ۱</option><option value="2" <?=((int)($values['group_no']??0)===2?'selected':'')?>>گروه ۲</option><option value="3" <?=((int)($values['group_no']??0)===3?'selected':'')?>>گروه ۳</option></select></label>
- <label><span class="lbl">تیم</span><select name="team_no" id="teamSelect" required></select></label>
+ <label class="location-field"><span class="lbl">استان محل خدمت</span><div class="smart-select" id="provinceSmart"><button type="button" class="smart-select-trigger" aria-haspopup="listbox" aria-expanded="false"><span class="smart-select-value">انتخاب استان</span><span class="smart-select-arrow">⌄</span></button><div class="smart-select-menu" role="listbox"><div class="smart-select-search-wrap"><input type="search" class="smart-select-search" placeholder="جست‌وجوی استان" autocomplete="off"></div><div class="smart-select-options"></div></div><select name="province_id" id="provinceSelect" class="smart-select-native"><option value="" disabled hidden <?=empty($values['province_id'])?'selected':''?>>انتخاب استان</option><?php foreach($provinces as $p):?><option value="<?=$p['id']?>" <?=((int)$values['province_id']===(int)$p['id'])?'selected':''?>><?=e($p['province_name'])?></option><?php endforeach;?></select></div></label>
+ <label><span class="lbl">شماره قائد</span><input name="commander_number" inputmode="numeric" maxlength="30" value="<?=e($values['commander_number']??'')?>"></label>
+ <label class=""><span class="lbl">سمت</span><select name="position_type" id="positionSelect"><option value="" disabled hidden <?=($values['position_type']??'')===''?'selected':''?>>انتخاب سمت</option><?php foreach($positionLabels as $k=>$v):?><option value="<?=$k?>" <?=($values['position_type']??'')===$k?'selected':''?>><?=$v?></option><?php endforeach;?></select></label>
+ <label><span class="lbl">رسته</span><select name="unit" id="unitSelect"><option value="" disabled hidden <?=((string)($values['unit']??''))===''?'selected':''?>>انتخاب رسته</option><?php foreach($categoryLabels as $k=>$v):?><option value="<?=e($k)?>" <?=((string)($values['unit']??'')===(string)$k?'selected':'')?>><?=e($v)?></option><?php endforeach;?></select></label>
+ <label><span class="lbl">شماره دسته</span><input name="unit_number" inputmode="numeric" value="<?=e($values['unit_number']??'1')?>"></label>
+ <label id="groupField"><span class="lbl">گروه</span><select name="group_no" id="groupSelect"><option value="" disabled hidden <?=($values['group_no']??'')===''?'selected':''?>>انتخاب گروه</option><option value="1" <?=((int)($values['group_no']??0)===1?'selected':'')?>>گروه ۱</option><option value="2" <?=((int)($values['group_no']??0)===2?'selected':'')?>>گروه ۲</option><option value="3" <?=((int)($values['group_no']??0)===3?'selected':'')?>>گروه ۳</option></select></label>
+ <label><span class="lbl">تیم</span><select name="team_no" id="teamSelect"></select></label>
 </div>
 
 
@@ -371,38 +418,117 @@ require __DIR__.'/../app/partials/header.php'; ?>
   <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="licenseModalTitle">
     <header class="pv-modal-head"><div><h2 id="licenseModalTitle">وضعیت گواهینامه</h2></div><button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button></header>
     <div class="pick-list">
-      <div class="pick-scroll">
-        <?php foreach(license_type_options() as $k=>$v): ?>
-        <label class="pick-item"><input type="checkbox" name="license_pick" value="<?=e($k)?>" <?= in_array($k,$currentLicenseTypes,true)?'checked':'' ?>><span><?=e($v)?></span></label>
-        <?php endforeach; ?>
-      </div>
-      <div class="level-group" id="licenseLevelGroup">
-        <span class="level-title">سطح تسلط</span>
-        <div class="level-buttons">
-          <?php foreach(license_level_options() as $k=>$v): ?>
-          <button type="button" class="level-btn<?= $currentLicenseLevel===$k?' active':'' ?>" data-level="<?=e($k)?>"><?=e($v)?></button>
-          <?php endforeach; ?>
+      <div class="pick-scroll license-scroll">
+        <?php foreach(license_type_options() as $k=>$v): $isOn=in_array($k,$currentLicenseTypes,true); ?>
+        <div class="license-item<?= $isOn?' is-on':'' ?>" data-license-item="<?=e($k)?>">
+          <label class="pick-item"><input type="checkbox" name="license_pick" value="<?=e($k)?>" <?= $isOn?'checked':'' ?>><span><?=e($v)?></span></label>
+          <div class="license-sub"<?= $isOn?'':' hidden' ?>>
+            <div class="level-group">
+              <span class="level-title">سطح تسلط</span>
+              <div class="level-buttons">
+                <?php foreach(license_level_options() as $lk=>$lv): ?>
+                <button type="button" class="level-btn<?= (($currentLicenseLevels[$k]??'')===$lk)?' active':'' ?>" data-level="<?=e($lk)?>"><?=e($lv)?></button>
+                <?php endforeach; ?>
+              </div>
+            </div>
+            <?php if($k==='special'): ?>
+            <label class="license-special-field"><span>عنوان گواهینامه ویژه</span>
+              <input type="text" id="licenseSpecialText" maxlength="120" autocomplete="off" placeholder="عنوان را وارد کنید" value="<?=e($currentSpecialTitle)?>">
+            </label>
+            <?php endif; ?>
+          </div>
         </div>
+        <?php endforeach; ?>
       </div>
     </div>
     <div class="pv-modal-actions"><button type="button" class="btn pv-btn-success" id="licenseApply">تایید</button><button type="button" class="btn secondary" data-pv-close>انصراف</button></div>
   </section>
 </div>
 
-<div class="pv-modal" id="languagesModal" aria-hidden="true">
+<!-- پاپ‌آپ تحصیلات: انتخاب از لیست + امکان وارد کردن متن آزاد (سایر) -->
+<div class="pv-modal" id="educationModal" aria-hidden="true">
   <div class="pv-modal-backdrop" data-pv-close></div>
-  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="languagesModalTitle">
-    <header class="pv-modal-head"><div><h2 id="languagesModalTitle">زبان‌های خارجی</h2></div><button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button></header>
-    <div class="pick-list">
-      <div class="pick-scroll">
-        <?php foreach($languageOptions as $k=>$v): ?>
-        <label class="pick-item"><input type="checkbox" name="languages_pick" value="<?=e($k)?>" <?= in_array($k,$currentLanguages,true)?'checked':'' ?>><span><?=e($v)?></span></label>
-        <?php endforeach; ?>
+  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="educationModalTitle">
+    <header class="pv-modal-head">
+      <div><span class="pv-modal-eyebrow">انتخاب از فهرست</span><h2 id="educationModalTitle">تحصیلات</h2></div>
+      <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
+    </header>
+    <div class="pv-modal-body">
+      <div class="pick-list">
+        <div class="pick-scroll">
+          <?php foreach($eduLabels as $k=>$v): ?>
+          <label class="pick-item">
+            <input type="radio" name="education_pick" value="<?=e($k)?>" <?= $currentEducation===$k?'checked':'' ?>>
+            <span><?=e($v)?></span>
+          </label>
+          <?php endforeach; ?>
+        </div>
       </div>
     </div>
-    <div class="pv-modal-actions"><button type="button" class="btn pv-btn-success" id="languagesApply">تایید</button><button type="button" class="btn secondary" data-pv-close>انصراف</button></div>
+    <div class="pv-modal-actions">
+      <button type="button" class="btn pv-btn-success" id="educationApply">تایید</button>
+      <button type="button" class="btn secondary" data-pv-close>انصراف</button>
+    </div>
   </section>
 </div>
+
+<!-- پاپ‌آپ حرفه و مهارت: آرایهٔ اینپوت با دکمهٔ + و - -->
+<div class="pv-modal" id="skillsModal" aria-hidden="true">
+  <div class="pv-modal-backdrop" data-pv-close></div>
+  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="skillsModalTitle">
+    <header class="pv-modal-head">
+      <div><span class="pv-modal-eyebrow">سابقهٔ ورزشی + حرفه + مهارت</span><h2 id="skillsModalTitle">حرفه و مهارت</h2></div>
+      <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
+    </header>
+    <div class="pv-modal-body">
+      <p class="zone-auto-note">هر ردیف یک مهارت یا حرفه یا سابقهٔ ورزشی است. برای افزودن، دکمهٔ + بزنید؛ برای حذف، دکمهٔ - کنار همان ردیف.</p>
+      <div id="skillsList" class="skills-list">
+        <?php if (!$currentSkills): ?>
+          <div class="skills-empty">هنوز موردی اضافه نشده است.</div>
+        <?php endif; ?>
+        <?php foreach ($currentSkills as $i => $sk): ?>
+          <div class="skills-row" data-skill-idx="<?= $i ?>">
+            <input type="text" maxlength="150" value="<?= e($sk) ?>" placeholder="مثلاً شنا، کشتی، برنامه‌نویسی، خیاطی، ...">
+            <button type="button" class="skills-remove" title="حذف" aria-label="حذف">−</button>
+          </div>
+        <?php endforeach; ?>
+      </div>
+      <button type="button" class="btn primary skills-add" id="skillsAddBtn" aria-label="افزودن ردیف جدید">+ افزودن</button>
+    </div>
+    <div class="pv-modal-actions">
+      <button type="button" class="btn pv-btn-success" id="skillsApply">تایید</button>
+      <button type="button" class="btn secondary" data-pv-close>انصراف</button>
+    </div>
+  </section>
+</div>
+
+<!-- پاپ‌آپ سابقه عضویت: چندانتخابی -->
+<div class="pv-modal" id="membershipModal" aria-hidden="true">
+  <div class="pv-modal-backdrop" data-pv-close></div>
+  <section class="pv-modal-card" role="dialog" aria-modal="true" aria-labelledby="membershipModalTitle">
+    <header class="pv-modal-head">
+      <div><span class="pv-modal-eyebrow">سابقهٔ خدمت قبلی</span><h2 id="membershipModalTitle">سابقه عضویت</h2></div>
+      <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
+    </header>
+    <div class="pv-modal-body">
+      <div class="pick-list">
+        <div class="pick-scroll">
+          <?php foreach($membershipLabels as $k=>$v): ?>
+          <label class="pick-item">
+            <input type="checkbox" name="membership_pick" value="<?=e($k)?>" <?= in_array($k, $currentMembership, true)?'checked':'' ?>>
+            <span><?=e($v)?></span>
+          </label>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+    <div class="pv-modal-actions">
+      <button type="button" class="btn pv-btn-success" id="membershipApply">تایید</button>
+      <button type="button" class="btn secondary" data-pv-close>انصراف</button>
+    </div>
+  </section>
+</div>
+
 
 <div class="actions wide"><button class="btn primary " type="submit">ثبت</button><a class="btn secondary" href="personnel.php">انصراف</a></div>
 </form>
@@ -417,6 +543,17 @@ require __DIR__.'/../app/partials/header.php'; ?>
 .pv-modal .pv-field input:focus,.pv-modal .pv-field textarea:focus{outline:none;border-color:#91a8c4;box-shadow:0 0 0 3px rgba(36,77,125,.08)}
 .pv-modal .pv-field>span{color:#5d6879}
 .pv-modal .pv-field>span .req{color:#c1393e;margin-right:3px}
+
+/* پاپ‌آپ حرفه و مهارت */
+.skills-list{display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;padding:4px}
+.skills-row{display:flex;gap:6px;align-items:center}
+.skills-row input{flex:1;border:1px solid #dbe1ea;border-radius:11px;padding:11px 12px;font:inherit;color:#172235;background:#fff}
+.skills-row input:focus{outline:none;border-color:#91a8c4;box-shadow:0 0 0 3px rgba(36,77,125,.08)}
+.skills-row .skills-remove{flex:0 0 auto;width:40px;height:40px;border:none;border-radius:11px;background:#fdebec;color:#c1393e;font-size:20px;font-weight:700;cursor:pointer;line-height:1}
+.skills-row .skills-remove:hover{background:#f9d6d8}
+.skills-empty{color:#8a96a8;font-size:13px;padding:14px;border:1px dashed #dbe1ea;border-radius:11px;text-align:center;background:#fafbfd}
+.skills-add{margin-top:10px;width:100%}
+.zone-auto-note{font-size:12px;color:#5d6879;margin:0 0 10px;line-height:1.8}
 </style>
 <script>
 (function(){
@@ -481,12 +618,13 @@ const syncIban=()=>{ if(!ibanDigits||!ibanHidden) return;
 ibanDigits?.addEventListener('input',syncIban); syncIban();
  /* ---------- پاپ‌آپ وضعیت سلامت ---------- */
  const healthLabels=<?= json_encode(health_status_options(), JSON_UNESCAPED_UNICODE) ?>;
+ const healthNeedsNote=['mobility','special_disease'];
  const healthStatusInput=document.getElementById('healthStatusInput'), healthNoteInput=document.getElementById('healthNoteInput');
  const healthNoteField=document.getElementById('healthNoteField'), healthNoteText=document.getElementById('healthNoteText');
  const healthLabelEl=document.querySelector('[data-health-label]'), healthTrigger=document.getElementById('healthTrigger');
  function syncHealthNote(){
   const picked=document.querySelector('input[name="health_pick"]:checked');
-  const needsNote=!!picked && picked.value!=='healthy';
+  const needsNote=!!picked && healthNeedsNote.includes(picked.value);
   if(healthNoteField) healthNoteField.hidden=!needsNote;
  }
  document.querySelectorAll('input[name="health_pick"]').forEach(el=>el.addEventListener('change',syncHealthNote));
@@ -494,8 +632,9 @@ ibanDigits?.addEventListener('input',syncIban); syncIban();
  document.getElementById('healthApply')?.addEventListener('click',()=>{
   const picked=document.querySelector('input[name="health_pick"]:checked');
   if(!picked) return;
-  const note=(picked.value==='healthy')?'':(healthNoteText?.value||'').trim();
-  if(picked.value!=='healthy' && !note){ healthNoteText?.focus(); return; }
+  const needsNote=healthNeedsNote.includes(picked.value);
+  const note=needsNote?(healthNoteText?.value||'').trim():'';
+  if(needsNote && !note){ healthNoteText?.focus(); return; }
   healthStatusInput.value=picked.value; healthNoteInput.value=note;
   healthLabelEl.textContent=healthLabels[picked.value]+(note?' — '+note:'');
   healthTrigger.classList.add('has-value');
@@ -506,41 +645,175 @@ ibanDigits?.addEventListener('input',syncIban); syncIban();
  const licenseTypeLabels=<?= json_encode(license_type_options(), JSON_UNESCAPED_UNICODE) ?>;
  const licenseLevelLabels=<?= json_encode(license_level_options(), JSON_UNESCAPED_UNICODE) ?>;
  const licenseLevelInput=document.getElementById('licenseLevelInput'), licenseHolder=document.getElementById('licenseTypesHolder');
+ const licenseSpecialInput=document.getElementById('licenseSpecialInput');
+ const licenseSpecialText=document.getElementById('licenseSpecialText');
  const licenseLabelEl=document.querySelector('[data-license-label]'), licenseTrigger=document.getElementById('licenseTrigger');
- let licenseLevel=licenseLevelInput.value||'';
- document.querySelectorAll('#licenseModal .level-btn').forEach(btn=>btn.addEventListener('click',()=>{
-  document.querySelectorAll('#licenseModal .level-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); licenseLevel=btn.dataset.level;
-  document.getElementById('licenseLevelGroup')?.classList.remove('needs-pick');
- }));
+
+ /* هر نوع گواهینامه سطح تسلط خودش را دارد؛ با تیک‌خوردن، کادر زیرش باز می‌شود. */
+ const licenseItems=[...document.querySelectorAll('#licenseModal [data-license-item]')];
+ function licenseSync(item){
+  const box=item.querySelector('input[name="license_pick"]');
+  const sub=item.querySelector('.license-sub');
+  item.classList.toggle('is-on',box.checked);
+  if(sub) sub.hidden=!box.checked;
+  if(!box.checked){
+   item.querySelectorAll('.level-btn').forEach(b=>b.classList.remove('active'));
+   item.querySelector('.level-group')?.classList.remove('needs-pick');
+   if(item.dataset.licenseItem==='special' && licenseSpecialText){ licenseSpecialText.value=''; licenseSpecialText.classList.remove('needs-pick'); }
+  }
+ }
+ licenseItems.forEach(item=>{
+  item.querySelector('input[name="license_pick"]')?.addEventListener('change',()=>licenseSync(item));
+  item.querySelectorAll('.level-btn').forEach(btn=>btn.addEventListener('click',()=>{
+   item.querySelectorAll('.level-btn').forEach(b=>b.classList.remove('active'));
+   btn.classList.add('active');
+   item.querySelector('.level-group')?.classList.remove('needs-pick');
+  }));
+  licenseSync(item);
+ });
+ licenseSpecialText?.addEventListener('input',()=>licenseSpecialText.classList.remove('needs-pick'));
+
  document.getElementById('licenseApply')?.addEventListener('click',()=>{
-  const picked=[...document.querySelectorAll('input[name="license_pick"]:checked')].map(i=>i.value);
-  if(picked.length && !licenseLevel){ document.getElementById('licenseLevelGroup')?.classList.add('needs-pick'); return; }
+  const picked=[], levels=[];
+  let missing=null, missingTitle=false;
+  licenseItems.forEach(item=>{
+   const box=item.querySelector('input[name="license_pick"]');
+   if(!box || !box.checked) return;
+   const key=item.dataset.licenseItem;
+   const lvl=item.querySelector('.level-btn.active')?.dataset.level||'';
+   picked.push(key);
+   if(!lvl){ if(!missing) missing=item; item.querySelector('.level-group')?.classList.add('needs-pick'); }
+   else levels.push(key+':'+lvl);
+   if(key==='special' && !(licenseSpecialText?.value||'').trim()){ missingTitle=true; licenseSpecialText?.classList.add('needs-pick'); }
+  });
+  if(missing){ missing.scrollIntoView({block:'nearest'}); return; }
+  if(missingTitle){ licenseSpecialText?.focus(); return; }
+
   licenseHolder.innerHTML=picked.map(v=>`<input type="hidden" name="license_types[]" value="${v}">`).join('');
-  licenseLevelInput.value=picked.length?licenseLevel:'';
+  licenseLevelInput.value=levels.join(',');
+  const specialTitle=picked.includes('special') ? (licenseSpecialText?.value||'').trim() : '';
+  if(licenseSpecialInput) licenseSpecialInput.value=specialTitle;
+  const levelMap={}; levels.forEach(pair=>{const [k,v]=pair.split(':'); levelMap[k]=v;});
   licenseLabelEl.textContent=picked.length
-    ? picked.map(v=>licenseTypeLabels[v]).join('، ')+(licenseLevel?' — تسلط '+licenseLevelLabels[licenseLevel]:'')
+    ? picked.map(v=>{
+        let t=licenseTypeLabels[v];
+        if(v==='special' && specialTitle) t+=' — '+specialTitle;
+        if(levelMap[v]) t+=' ('+licenseLevelLabels[levelMap[v]]+')';
+        return t;
+      }).join('، ')
     : 'انتخاب وضعیت گواهینامه';
   licenseTrigger.classList.toggle('has-value',picked.length>0);
   document.querySelectorAll('#licenseModal [data-pv-close]')[0]?.click();
  });
 
- /* ---------- پاپ‌آپ زبان‌های خارجی ---------- */
- const languageLabels=<?= json_encode(language_options(), JSON_UNESCAPED_UNICODE) ?>;
- const languagesHolder=document.getElementById('languagesHolder');
- const languagesLabelEl=document.querySelector('[data-languages-label]');
- const languagesTrigger=document.getElementById('languagesTrigger');
- document.getElementById('languagesApply')?.addEventListener('click',()=>{
-  const picked=[...document.querySelectorAll('input[name="languages_pick"]:checked')].map(i=>i.value);
-  languagesHolder.innerHTML=picked.map(v=>`<input type="hidden" name="languages[]" value="${v}">`).join('');
-  languagesLabelEl.textContent=picked.length
-    ? picked.map(v=>languageLabels[v]).join('، ')
-    : 'انتخاب زبان‌های خارجی';
-  languagesTrigger.classList.toggle('has-value',picked.length>0);
-  document.querySelectorAll('#languagesModal [data-pv-close]')[0]?.click();
- });
 
  document.querySelectorAll('input[name="first_name"],input[name="last_name"],input[name="father_name"],input[name="secondary_job"]').forEach(el=>el.addEventListener('input',()=>{el.value=el.value.replace(/[0-9۰-۹]/g,'');}));
+
+ /* ===== پاپ‌آپ تحصیلات ===== */
+ const eduLabelEl=document.querySelector('[data-education-label]');
+ const eduTrigger=document.getElementById('educationTrigger');
+ document.getElementById('educationApply')?.addEventListener('click',()=>{
+  const picked=document.querySelector('#educationModal input[name="education_pick"]:checked');
+  const val=picked ? picked.value : '';
+  const label=picked ? picked.nextElementSibling.textContent.trim() : 'انتخاب تحصیلات';
+  document.querySelectorAll('#educationModal input[name="education_pick"]').forEach(r=>{
+   if(!r.checked && document.getElementById('edu'+r.value.replace(/[^a-z0-9_]/gi,''))){
+      const i=document.getElementById('edu'+r.value.replace(/[^a-z0-9_]/gi,'')); if(i) i.remove();
+   }
+  });
+  let eduInput=document.getElementById('educationInput');
+  if(!eduInput){
+   const formEl=eduTrigger ? eduTrigger.closest('form') : document.querySelector('form.personnel-form');
+   if(formEl){
+    eduInput=document.createElement('input');
+    eduInput.type='hidden'; eduInput.name='education'; eduInput.id='educationInput';
+    formEl.appendChild(eduInput);
+   }
+  }
+  if(eduInput) eduInput.value=val;
+  if(eduLabelEl) eduLabelEl.textContent=label;
+  if(eduTrigger) eduTrigger.classList.toggle('has-value', !!val);
+  document.querySelectorAll('#educationModal [data-pv-close]')[0]?.click();
+ });
+
+ /* ===== پاپ‌آپ حرفه و مهارت ===== */
+ const skillsList=document.getElementById('skillsList');
+ const skillsAddBtn=document.getElementById('skillsAddBtn');
+ const skillsHolder=document.getElementById('skillsHolder');
+ const skillsTrigger=document.getElementById('skillsTrigger');
+ const skillsLabelEl=document.querySelector('[data-skills-label]');
+ const educationLabels=<?=json_encode($eduLabels,JSON_UNESCAPED_UNICODE)?>;
+ const membershipLabelsJS=<?=json_encode($membershipLabels,JSON_UNESCAPED_UNICODE)?>;
+
+ function skillsRowTemplate(value){
+  const row=document.createElement('div'); row.className='skills-row';
+  row.innerHTML=`<input type="text" maxlength="150" placeholder="مثلاً شنا، کشتی، برنامه‌نویسی، خیاطی، ..." value="${(value||'').replace(/"/g,'&quot;')}"><button type="button" class="skills-remove" title="حذف" aria-label="حذف">−</button>`;
+  return row;
+ }
+ skillsAddBtn?.addEventListener('click',()=>{
+  const empty=skillsList?.querySelector('.skills-empty');
+  if(empty) empty.remove();
+  skillsList.appendChild(skillsRowTemplate(''));
+  const inputs=skillsList.querySelectorAll('input[type="text"]');
+  inputs[inputs.length-1].focus();
+ });
+ skillsList?.addEventListener('click',(e)=>{
+  const btn=e.target.closest('.skills-remove');
+  if(!btn) return;
+  const row=btn.closest('.skills-row');
+  const allRows=skillsList.querySelectorAll('.skills-row');
+  if(allRows.length<=1){
+   row.querySelector('input').value='';
+   return;
+  }
+  row.remove();
+  if(!skillsList.querySelector('.skills-row')){
+   const empty=document.createElement('div'); empty.className='skills-empty'; empty.textContent='هنوز موردی اضافه نشده است.';
+   skillsList.appendChild(empty);
+  }
+ });
+ document.getElementById('skillsApply')?.addEventListener('click',()=>{
+  const rows=skillsList.querySelectorAll('.skills-row');
+  const vals=[];
+  rows.forEach(r=>{ const inp=r.querySelector('input[type="text"]'); if(inp) vals.push(inp.value.trim()); });
+  if(skillsHolder){
+   skillsHolder.innerHTML='';
+   vals.filter(v=>v!=='').forEach(v=>{
+    const i=document.createElement('input'); i.type='hidden'; i.name='professional_skills[]'; i.value=v;
+    skillsHolder.appendChild(i);
+   });
+  }
+  const filled=vals.filter(v=>v!=='');
+  if(skillsLabelEl) skillsLabelEl.textContent = filled.length ? filled.join('، ') : 'انتخاب حرفه و مهارت';
+  if(skillsTrigger) skillsTrigger.classList.toggle('has-value', filled.length>0);
+  document.querySelectorAll('#skillsModal [data-pv-close]')[0]?.click();
+ });
+
+ /* ===== پاپ‌آپ سابقه عضویت ===== */
+ const membershipTrigger=document.getElementById('membershipTrigger');
+ const membershipLabelEl=document.querySelector('[data-membership-label]');
+ document.getElementById('membershipApply')?.addEventListener('click',()=>{
+  const checked=document.querySelectorAll('#membershipModal input[name="membership_pick"]:checked');
+  const vals=Array.from(checked).map(c=>c.value);
+  let memHolder=document.getElementById('membershipHolder');
+  if(!memHolder){
+   const formEl=membershipTrigger ? membershipTrigger.closest('form') : document.querySelector('form.personnel-form');
+   if(formEl){
+    memHolder=document.createElement('div'); memHolder.id='membershipHolder';
+    formEl.appendChild(memHolder);
+   }
+  }
+  if(memHolder){
+   memHolder.innerHTML='';
+   vals.forEach(v=>{ const i=document.createElement('input'); i.type='hidden'; i.name='membership_history[]'; i.value=v; memHolder.appendChild(i); });
+  }
+  if(membershipLabelEl){
+   membershipLabelEl.textContent = vals.length ? vals.map(v=>membershipLabelsJS[v]||v).join('، ') : 'انتخاب سابقه عضویت';
+  }
+  if(membershipTrigger) membershipTrigger.classList.toggle('has-value', vals.length>0);
+  document.querySelectorAll('#membershipModal [data-pv-close]')[0]?.click();
+ });
+
 })();
 </script>
 <script src="<?= e(asset_url('assets/pv-modal.js')) ?>" defer></script>
