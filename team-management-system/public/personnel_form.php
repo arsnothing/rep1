@@ -293,7 +293,7 @@ require __DIR__.'/../app/partials/header.php'; ?>
 ?>
 <label class="picker-field"><span class="lbl">تحصیلات</span>
   <button type="button" class="picker-trigger<?= $currentEducation!==''?' has-value':'' ?>" data-pv-open="educationModal" id="educationTrigger"><span data-education-label><?=e($educationLabel)?></span><span class="picker-arrow">⌄</span></button>
-  <input type="hidden" name="education_status" id="educationStatusInput" value="<?=e($currentEducation)?>" required>
+  <input type="hidden" name="education_status" id="educationStatusInput" value="<?=e($currentEducation)?>">
 </label>
 <label><span class="lbl">وضعیت تأهل</span><select name="marital_status"><option value="" disabled hidden <?=($values['marital_status']??'')===''?'selected':''?>>انتخاب وضعیت تأهل</option><option value="single" <?=($values['marital_status']??'')==='single'?'selected':''?>>مجرد</option><option value="married" <?=($values['marital_status']??'')==='married'?'selected':''?>>متأهل</option><option value="separated" <?=($values['marital_status']??'')==='separated'?'selected':''?>>متارکه</option></select></label>
 
@@ -320,6 +320,20 @@ require __DIR__.'/../app/partials/header.php'; ?>
   <span id="licenseTypesHolder"><?php foreach($currentLicenseTypes as $lt): ?><input type="hidden" name="license_types[]" value="<?=e($lt)?>"><?php endforeach; ?></span>
 </label>
 
+<?php
+  /* پاپ‌آپ سابقه عضویت - چندانتخابی از گزینه‌های fixed */
+  $membershipLabels=['faraja'=>'فراجا','army'=>'ارتش','sepah'=>'سپاه','volunteer_police'=>'پلیس افتخاری'];
+  $currentMembership=array_values(array_filter(explode(',', (string)($values['membership_history']??''))));
+  $currentMembership=array_values(array_intersect($currentMembership, array_keys($membershipLabels)));
+  $membershipLabel = $currentMembership
+      ? implode('، ', array_map(fn($k)=>$membershipLabels[$k]??$k, $currentMembership))
+      : 'انتخاب سابقه عضویت';
+?>
+<label class="picker-field"><span class="lbl">سابقه عضویت</span>
+  <button type="button" class="picker-trigger<?= $currentMembership?' has-value':'' ?>" data-pv-open="membershipModal" id="membershipTrigger"><span data-membership-label><?=e($membershipLabel)?></span><span class="picker-arrow">⌄</span></button>
+  <span id="membershipHolder"><?php foreach($currentMembership as $mk): ?><input type="hidden" name="membership_history[]" value="<?=e($mk)?>"><?php endforeach; ?></span>
+</label>
+
 <label><span class="lbl">زبان خارجی</span><input name="languages" maxlength="255" autocomplete="off" value="<?=e($values['languages']??'')?>"></label>
 
 <?php
@@ -334,20 +348,6 @@ require __DIR__.'/../app/partials/header.php'; ?>
 <label class="picker-field"><span class="lbl">حرفه و مهارت</span>
   <button type="button" class="picker-trigger<?= $currentSkills?' has-value':'' ?>" data-pv-open="skillsModal" id="skillsTrigger"><span data-skills-label><?=e($skillsLabel)?></span><span class="picker-arrow">⌄</span></button>
   <span id="skillsHolder"><?php foreach($currentSkills as $sk): ?><input type="hidden" name="professional_skills[]" value="<?=e($sk)?>"><?php endforeach; ?></span>
-</label>
-
-<?php
-  /* پاپ‌آپ سابقه عضویت - چندانتخابی از گزینه‌های fixed */
-  $membershipLabels=['faraja'=>'فراجا','army'=>'ارتش','sepah'=>'سپاه','volunteer_police'=>'پلیس افتخاری'];
-  $currentMembership=array_values(array_filter(explode(',', (string)($values['membership_history']??''))));
-  $currentMembership=array_values(array_intersect($currentMembership, array_keys($membershipLabels)));
-  $membershipLabel = $currentMembership
-      ? implode('، ', array_map(fn($k)=>$membershipLabels[$k]??$k, $currentMembership))
-      : 'انتخاب سابقه عضویت';
-?>
-<label class="picker-field"><span class="lbl">سابقه عضویت</span>
-  <button type="button" class="picker-trigger<?= $currentMembership?' has-value':'' ?>" data-pv-open="membershipModal" id="membershipTrigger"><span data-membership-label><?=e($membershipLabel)?></span><span class="picker-arrow">⌄</span></button>
-  <span id="membershipHolder"><?php foreach($currentMembership as $mk): ?><input type="hidden" name="membership_history[]" value="<?=e($mk)?>"><?php endforeach; ?></span>
 </label>
 
 <label><span class="lbl">شماره تماس ثابت</span><input name="landline_phone" inputmode="numeric" value="<?=e($values['landline_phone']??'')?>"></label>
@@ -481,7 +481,6 @@ require __DIR__.'/../app/partials/header.php'; ?>
       <button type="button" class="pv-modal-close" data-pv-close aria-label="بستن">×</button>
     </header>
     <div class="pv-modal-body">
-      <p class="zone-auto-note">هر ردیف یک مهارت یا حرفه یا سابقهٔ ورزشی است. برای افزودن، دکمهٔ + بزنید؛ برای حذف، دکمهٔ - کنار همان ردیف.</p>
       <div id="skillsList" class="skills-list">
         <?php if (!$currentSkills): ?>
           <div class="skills-empty">هنوز موردی اضافه نشده است.</div>
@@ -493,7 +492,7 @@ require __DIR__.'/../app/partials/header.php'; ?>
           </div>
         <?php endforeach; ?>
       </div>
-      <button type="button" class="btn primary skills-add" id="skillsAddBtn" aria-label="افزودن ردیف جدید">+ افزودن</button>
+      <button type="button" class="btn primary skills-add" id="skillsAddBtn" aria-label="افزودن ردیف جدید">افزودن</button>
     </div>
     <div class="pv-modal-actions">
       <button type="button" class="btn pv-btn-success" id="skillsApply">تایید</button>
@@ -552,7 +551,8 @@ require __DIR__.'/../app/partials/header.php'; ?>
 .skills-row .skills-remove{flex:0 0 auto;width:40px;height:40px;border:none;border-radius:11px;background:#fdebec;color:#c1393e;font-size:20px;font-weight:700;cursor:pointer;line-height:1}
 .skills-row .skills-remove:hover{background:#f9d6d8}
 .skills-empty{color:#8a96a8;font-size:13px;padding:14px;border:1px dashed #dbe1ea;border-radius:11px;text-align:center;background:#fafbfd}
-.skills-add{margin-top:10px;width:100%}
+.skills-add{margin-top:10px;width:100%;background:#7fc4a0;color:#fff}
+.skills-add:hover{background:#6db78c}
 .zone-auto-note{font-size:12px;color:#5d6879;margin:0 0 10px;line-height:1.8}
 </style>
 <script>
