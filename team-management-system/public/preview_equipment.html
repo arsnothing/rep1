@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>پیش‌نمایش equipment dropdown</title>
+<style>
+body{font-family:Vazirmatn,Tahoma,sans-serif;background:#f5f7fb;padding:30px;color:#152033;direction:rtl;margin:0}
+.container{max-width:600px;margin:0 auto}
+h2{color:#23344d;margin-bottom:18px}
+.panel{background:#fff;border:1px solid #e5e9ef;border-radius:18px;padding:24px;box-shadow:0 8px 30px rgba(23,43,77,.05)}
+.section-title{font-weight:800;font-size:15px;color:#23344d;border-bottom:1px solid #eef1f5;padding-bottom:10px;margin-bottom:14px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+label{display:flex;flex-direction:column;gap:7px;font-size:13px;color:#5d6879}
+label.wide{grid-column:1/-1}
+select{border:1px solid #dbe1ea;border-radius:11px;padding:12px;font:inherit;color:#172235;background:#fff}
+</style>
+</head>
+<body>
+<div class="container">
+<h2>صفحهٔ equipment - dropdown «نوع آماد»</h2>
+
+<div class="panel">
+  <div class="section-title">ثبت آماد جدید</div>
+  <div class="form-grid">
+    <label class="wide equipment-type-field">نوع آماد
+      <select id="stockTypeSelect" data-placeholder="عنوان">
+        <option value="" disabled selected hidden>عنوان</option>
+        <option value="car">خودرو</option>
+        <option value="motorcycle">موتور سیکلت</option>
+        <option value="led">ال ای دی</option>
+        <option value="gun">سلاح</option>
+        <option value="shocker">شوکر</option>
+        <option value="spray">افشانه</option>
+        <option value="radio">بی‌سیم</option>
+        <option value="mobile">موبایل</option>
+        <option value="computer">رایانه</option>
+        <option value="other">سایر</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<p style="margin-top:24px;padding:14px;background:#eef3fb;border-radius:11px;color:#38577d;font-size:13px">
+<strong>نتیجه:</strong> label بالای dropdown = «نوع آماد»، متن راهنمای داخل dropdown (data-placeholder) = «عنوان».
+</p>
+
+</div>
+</body>
+</html>
